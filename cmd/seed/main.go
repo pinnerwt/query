@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"strings"
 
@@ -15,8 +16,8 @@ import (
 )
 
 func main() {
-	lat := flag.Float64("lat", 0, "Center latitude (required)")
-	lng := flag.Float64("lng", 0, "Center longitude (required)")
+	lat := flag.Float64("lat", math.NaN(), "Center latitude (required)")
+	lng := flag.Float64("lng", math.NaN(), "Center longitude (required)")
 	radius := flag.Float64("radius", 0, "Search radius in meters (required)")
 	typesStr := flag.String("types", "", "Comma-separated place types in sweep order (required)")
 	subRadius := flag.Float64("sub-radius", 0, "Grid cell radius in meters (default: radius/3)")
@@ -44,7 +45,7 @@ func main() {
 	}
 
 	// Validate required flags
-	if *lat == 0 && *lng == 0 {
+	if math.IsNaN(*lat) || math.IsNaN(*lng) {
 		log.Fatal("--lat and --lng are required")
 	}
 	if *radius <= 0 {

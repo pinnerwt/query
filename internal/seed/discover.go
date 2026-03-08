@@ -15,7 +15,10 @@ type SweepConfig struct {
 	Radius    float64
 	SubRadius float64
 	PlaceType string
+	MaxDepth  int // Maximum subdivision depth (default 6 if 0)
 }
+
+const defaultMaxDepth = 6
 
 // SweepStats tracks sweep progress.
 type SweepStats struct {
@@ -36,12 +39,17 @@ type CellResult struct {
 func DiscoverSweep(ctx context.Context, client *PlacesClient, cfg SweepConfig) ([]CellResult, SweepStats, error) {
 	grid := GenerateGridPoints(cfg.CenterLat, cfg.CenterLng, cfg.Radius, cfg.SubRadius)
 
+	maxDepth := cfg.MaxDepth
+	if maxDepth <= 0 {
+		maxDepth = defaultMaxDepth
+	}
+
 	seen := make(map[string]bool)
 	var allResults []CellResult
 	var stats SweepStats
 
 	for _, point := range grid {
-		results, err := sweepCell(ctx, client, GridCell{Point: point, Radius: cfg.SubRadius}, cfg.PlaceType, seen, &stats)
+		results, err := sweepCell(ctx, client, GridCell{Point: point, Radius: cfg.SubRadius}, cfg.PlaceType, seen, &stats, 0, maxDepth)
 		if err != nil {
 			return nil, stats, err
 		}
@@ -51,7 +59,7 @@ func DiscoverSweep(ctx context.Context, client *PlacesClient, cfg SweepConfig) (
 	return allResults, stats, nil
 }
 
-func sweepCell(ctx context.Context, client *PlacesClient, cell GridCell, placeType string, seen map[string]bool, stats *SweepStats) ([]CellResult, error) {
+func sweepCell(ctx context.Context, client *PlacesClient, cell GridCell, placeType string, seen map[string]bool, stats *SweepStats, depth, maxDepth int) ([]CellResult, error) {
 	// Probe (free)
 	probeResults, err := client.SearchNearbyProbe(ctx, cell.Point.Lat, cell.Point.Lng, cell.Radius, placeType)
 	if err != nil {
@@ -63,21 +71,26 @@ func sweepCell(ctx context.Context, client *PlacesClient, cell GridCell, placeTy
 		return nil, nil
 	}
 
-	// Saturated — subdivide
-	if len(probeResults) >= maxResults {
-		fmt.Printf("  Cell (%.4f, %.4f) r=%.0fm: saturated (%d), subdividing\n",
-			cell.Point.Lat, cell.Point.Lng, cell.Radius, len(probeResults))
+	// Saturated — subdivide if we haven't hit max depth
+	if len(probeResults) >= maxResults && depth < maxDepth {
+		fmt.Printf("  Cell (%.4f, %.4f) r=%.0fm: saturated (%d), subdividing (depth %d)\n",
+			cell.Point.Lat, cell.Point.Lng, cell.Radius, len(probeResults), depth)
 
 		var allResults []CellResult
 		children := SubdivideCell(cell.Point, cell.Radius)
 		for _, child := range children {
-			results, err := sweepCell(ctx, client, child, placeType, seen, stats)
+			results, err := sweepCell(ctx, client, child, placeType, seen, stats, depth+1, maxDepth)
 			if err != nil {
 				return nil, err
 			}
 			allResults = append(allResults, results...)
 		}
 		return allResults, nil
+	}
+
+	if len(probeResults) >= maxResults {
+		fmt.Printf("  Cell (%.4f, %.4f) r=%.0fm: saturated (%d), max depth %d reached, fetching top %d\n",
+			cell.Point.Lat, cell.Point.Lng, cell.Radius, len(probeResults), maxDepth, maxResults)
 	}
 
 	// Not saturated — fetch basic fields

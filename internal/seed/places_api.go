@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
 const defaultBaseURL = "https://places.googleapis.com/v1"
@@ -28,7 +29,7 @@ func NewPlacesClient(apiKey string, opts ...PlacesClientOption) *PlacesClient {
 	c := &PlacesClient{
 		apiKey:  apiKey,
 		baseURL: defaultBaseURL,
-		http:    http.DefaultClient,
+		http:    &http.Client{Timeout: 30 * time.Second},
 	}
 	for _, opt := range opts {
 		opt(c)
