@@ -47,6 +47,16 @@ type ComboMealGroupOption struct {
 	CreatedAt       pgtype.Timestamptz
 }
 
+type DiscoveryQuery struct {
+	ID          int64
+	Latitude    float64
+	Longitude   float64
+	Radius      float64
+	PlaceType   string
+	ResultCount int32
+	CreatedAt   pgtype.Timestamptz
+}
+
 type MenuCategory struct {
 	ID           int64
 	RestaurantID int64
@@ -86,6 +96,19 @@ type Place struct {
 	ReservationUrl pgtype.Text
 	CreatedAt      pgtype.Timestamptz
 	UpdatedAt      pgtype.Timestamptz
+}
+
+type PlaceDiscovery struct {
+	ID            int64
+	QueryID       pgtype.Int8
+	GooglePlaceID string
+	Name          pgtype.Text
+	Address       pgtype.Text
+	Latitude      pgtype.Float8
+	Longitude     pgtype.Float8
+	PlaceTypes    []string
+	Status        string
+	DiscoveredAt  pgtype.Timestamptz
 }
 
 type PlaceOpeningHour struct {
