@@ -24,12 +24,20 @@ type SweepStats struct {
 	Duplicates  int
 }
 
-// DiscoverSweep runs a grid sweep for a single place type, returning deduplicated results.
-func DiscoverSweep(ctx context.Context, client *PlacesClient, cfg SweepConfig) ([]PlaceResult, SweepStats, error) {
+// CellResult holds the results of a single grid cell sweep.
+type CellResult struct {
+	Lat    float64
+	Lng    float64
+	Radius float64
+	Places []PlaceResult
+}
+
+// DiscoverSweep runs a grid sweep for a single place type, returning deduplicated results per cell.
+func DiscoverSweep(ctx context.Context, client *PlacesClient, cfg SweepConfig) ([]CellResult, SweepStats, error) {
 	grid := GenerateGridPoints(cfg.CenterLat, cfg.CenterLng, cfg.Radius, cfg.SubRadius)
 
 	seen := make(map[string]bool)
-	var allResults []PlaceResult
+	var allResults []CellResult
 	var stats SweepStats
 
 	for _, point := range grid {
@@ -43,7 +51,7 @@ func DiscoverSweep(ctx context.Context, client *PlacesClient, cfg SweepConfig) (
 	return allResults, stats, nil
 }
 
-func sweepCell(ctx context.Context, client *PlacesClient, cell GridCell, placeType string, seen map[string]bool, stats *SweepStats) ([]PlaceResult, error) {
+func sweepCell(ctx context.Context, client *PlacesClient, cell GridCell, placeType string, seen map[string]bool, stats *SweepStats) ([]CellResult, error) {
 	// Probe (free)
 	probeResults, err := client.SearchNearbyProbe(ctx, cell.Point.Lat, cell.Point.Lng, cell.Radius, placeType)
 	if err != nil {
@@ -60,7 +68,7 @@ func sweepCell(ctx context.Context, client *PlacesClient, cell GridCell, placeTy
 		fmt.Printf("  Cell (%.4f, %.4f) r=%.0fm: saturated (%d), subdividing\n",
 			cell.Point.Lat, cell.Point.Lng, cell.Radius, len(probeResults))
 
-		var allResults []PlaceResult
+		var allResults []CellResult
 		children := SubdivideCell(cell.Point, cell.Radius)
 		for _, child := range children {
 			results, err := sweepCell(ctx, client, child, placeType, seen, stats)
@@ -80,7 +88,7 @@ func sweepCell(ctx context.Context, client *PlacesClient, cell GridCell, placeTy
 
 	var newResults []PlaceResult
 	for _, r := range basicResults {
-		id := normalizeID(r.ID)
+		id := NormalizeID(r.ID)
 		if seen[id] {
 			stats.Duplicates++
 			continue
@@ -93,10 +101,17 @@ func sweepCell(ctx context.Context, client *PlacesClient, cell GridCell, placeTy
 	fmt.Printf("  Cell (%.4f, %.4f) r=%.0fm: %d places (%d new, %d dupes)\n",
 		cell.Point.Lat, cell.Point.Lng, cell.Radius, len(basicResults), len(newResults), len(basicResults)-len(newResults))
 
-	return newResults, nil
+	cellResult := CellResult{
+		Lat:    cell.Point.Lat,
+		Lng:    cell.Point.Lng,
+		Radius: cell.Radius,
+		Places: newResults,
+	}
+
+	return []CellResult{cellResult}, nil
 }
 
-// normalizeID strips the "places/" prefix from the Google Place ID.
-func normalizeID(id string) string {
+// NormalizeID strips the "places/" prefix from the Google Place ID.
+func NormalizeID(id string) string {
 	return strings.TrimPrefix(id, "places/")
 }

@@ -54,7 +54,7 @@ func TestDiscoverSweep(t *testing.T) {
 	client := NewPlacesClient("test-key", WithBaseURL(server.URL))
 
 	// Use a very small radius so we get few grid cells
-	results, stats, err := DiscoverSweep(context.Background(), client, SweepConfig{
+	cellResults, stats, err := DiscoverSweep(context.Background(), client, SweepConfig{
 		CenterLat: 25.0,
 		CenterLng: 121.0,
 		Radius:    100,
@@ -62,9 +62,17 @@ func TestDiscoverSweep(t *testing.T) {
 		PlaceType: "restaurant",
 	})
 	require.NoError(t, err)
-	assert.Greater(t, len(results), 0)
+	assert.Greater(t, len(cellResults), 0)
 	assert.Greater(t, stats.CellsProbed, 0)
 	assert.Greater(t, stats.NewPlaces, 0)
+
+	// Flatten places across all cells to verify count
+	var totalPlaces int
+	for _, cell := range cellResults {
+		totalPlaces += len(cell.Places)
+		assert.Greater(t, cell.Radius, 0.0)
+	}
+	assert.Greater(t, totalPlaces, 0)
 }
 
 func TestDiscoverSweepSaturation(t *testing.T) {
