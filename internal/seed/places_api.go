@@ -64,15 +64,44 @@ type SearchNearbyResponse struct {
 }
 
 type PlaceResult struct {
-	ID               string       `json:"id"`
-	DisplayName      *DisplayName `json:"displayName,omitempty"`
-	FormattedAddress string       `json:"formattedAddress,omitempty"`
-	Location         *LatLng      `json:"location,omitempty"`
-	Types            []string     `json:"types,omitempty"`
+	ID                   string                `json:"id"`
+	DisplayName          *DisplayName          `json:"displayName,omitempty"`
+	FormattedAddress     string                `json:"formattedAddress,omitempty"`
+	Location             *LatLng               `json:"location,omitempty"`
+	Types                []string              `json:"types,omitempty"`
+	Rating               float64               `json:"rating,omitempty"`
+	UserRatingCount      int                   `json:"userRatingCount,omitempty"`
+	PriceLevel           string                `json:"priceLevel,omitempty"`
+	NationalPhoneNumber  string                `json:"nationalPhoneNumber,omitempty"`
+	WebsiteURI           string                `json:"websiteUri,omitempty"`
+	GoogleMapsURI        string                `json:"googleMapsUri,omitempty"`
+	RegularOpeningHours  *OpeningHours         `json:"regularOpeningHours,omitempty"`
+	Photos               []PhotoRef            `json:"photos,omitempty"`
 }
 
 type DisplayName struct {
 	Text string `json:"text"`
+}
+
+type OpeningHours struct {
+	Periods []Period `json:"periods"`
+}
+
+type Period struct {
+	Open  TimeOfDay `json:"open"`
+	Close TimeOfDay `json:"close"`
+}
+
+type TimeOfDay struct {
+	Day    int `json:"day"`
+	Hour   int `json:"hour"`
+	Minute int `json:"minute"`
+}
+
+type PhotoRef struct {
+	Name            string `json:"name"`
+	WidthPx         int    `json:"widthPx"`
+	HeightPx        int    `json:"heightPx"`
 }
 
 // SearchNearbyProbe calls searchNearby with only places.id in the field mask (free).
@@ -85,6 +114,14 @@ func (c *PlacesClient) SearchNearbyProbe(ctx context.Context, lat, lng, radius f
 func (c *PlacesClient) SearchNearbyBasic(ctx context.Context, lat, lng, radius float64, placeType string) ([]PlaceResult, error) {
 	return c.searchNearby(ctx, lat, lng, radius, placeType,
 		"places.id,places.displayName,places.formattedAddress,places.location,places.types")
+}
+
+// SearchNearbyAdvanced calls searchNearby with advanced fields (paid, ~$0.035/query).
+func (c *PlacesClient) SearchNearbyAdvanced(ctx context.Context, lat, lng, radius float64, placeType string) ([]PlaceResult, error) {
+	return c.searchNearby(ctx, lat, lng, radius, placeType,
+		"places.id,places.displayName,places.formattedAddress,places.location,places.types,"+
+			"places.regularOpeningHours,places.priceLevel,places.rating,places.userRatingCount,"+
+			"places.websiteUri,places.nationalPhoneNumber,places.googleMapsUri,places.photos")
 }
 
 func (c *PlacesClient) searchNearby(ctx context.Context, lat, lng, radius float64, placeType, fieldMask string) ([]PlaceResult, error) {

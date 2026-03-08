@@ -80,6 +80,24 @@ func (q *Queries) CreatePlace(ctx context.Context, arg CreatePlaceParams) (Place
 	return i, err
 }
 
+const deleteOpeningHours = `-- name: DeleteOpeningHours :exec
+DELETE FROM place_opening_hours WHERE place_id = $1
+`
+
+func (q *Queries) DeleteOpeningHours(ctx context.Context, placeID int64) error {
+	_, err := q.db.Exec(ctx, deleteOpeningHours, placeID)
+	return err
+}
+
+const deletePlacePhotos = `-- name: DeletePlacePhotos :exec
+DELETE FROM place_photos WHERE place_id = $1
+`
+
+func (q *Queries) DeletePlacePhotos(ctx context.Context, placeID int64) error {
+	_, err := q.db.Exec(ctx, deletePlacePhotos, placeID)
+	return err
+}
+
 const getPlace = `-- name: GetPlace :one
 SELECT id, google_place_id, name, address, latitude, longitude, plus_code, phone_number, website, google_maps_url, rating, total_ratings, price_level, place_types, reservation_url, created_at, updated_at FROM places WHERE id = $1
 `
@@ -138,6 +156,52 @@ func (q *Queries) GetPlaceByGoogleID(ctx context.Context, googlePlaceID string) 
 	return i, err
 }
 
+const insertOpeningHour = `-- name: InsertOpeningHour :exec
+INSERT INTO place_opening_hours (place_id, day_of_week, open_time, close_time)
+VALUES ($1, $2, $3, $4)
+`
+
+type InsertOpeningHourParams struct {
+	PlaceID   int64
+	DayOfWeek int16
+	OpenTime  pgtype.Time
+	CloseTime pgtype.Time
+}
+
+func (q *Queries) InsertOpeningHour(ctx context.Context, arg InsertOpeningHourParams) error {
+	_, err := q.db.Exec(ctx, insertOpeningHour,
+		arg.PlaceID,
+		arg.DayOfWeek,
+		arg.OpenTime,
+		arg.CloseTime,
+	)
+	return err
+}
+
+const insertPlacePhoto = `-- name: InsertPlacePhoto :exec
+INSERT INTO place_photos (place_id, google_photo_reference, url, width, height)
+VALUES ($1, $2, $3, $4, $5)
+`
+
+type InsertPlacePhotoParams struct {
+	PlaceID              int64
+	GooglePhotoReference pgtype.Text
+	Url                  pgtype.Text
+	Width                pgtype.Int4
+	Height               pgtype.Int4
+}
+
+func (q *Queries) InsertPlacePhoto(ctx context.Context, arg InsertPlacePhotoParams) error {
+	_, err := q.db.Exec(ctx, insertPlacePhoto,
+		arg.PlaceID,
+		arg.GooglePhotoReference,
+		arg.Url,
+		arg.Width,
+		arg.Height,
+	)
+	return err
+}
+
 const listPlacesByType = `-- name: ListPlacesByType :many
 SELECT id, google_place_id, name, address, latitude, longitude, plus_code, phone_number, website, google_maps_url, rating, total_ratings, price_level, place_types, reservation_url, created_at, updated_at FROM places WHERE $1::text = ANY(place_types) ORDER BY name
 `
@@ -178,4 +242,83 @@ func (q *Queries) ListPlacesByType(ctx context.Context, placeType string) ([]Pla
 		return nil, err
 	}
 	return items, nil
+}
+
+const upsertPlace = `-- name: UpsertPlace :one
+INSERT INTO places (
+    google_place_id, name, address, latitude, longitude,
+    phone_number, website, google_maps_url,
+    rating, total_ratings, price_level, place_types
+) VALUES (
+    $1, $2, $3, $4, $5,
+    $6, $7, $8,
+    $9, $10, $11, $12
+)
+ON CONFLICT (google_place_id) DO UPDATE SET
+    name = EXCLUDED.name,
+    address = EXCLUDED.address,
+    latitude = EXCLUDED.latitude,
+    longitude = EXCLUDED.longitude,
+    phone_number = EXCLUDED.phone_number,
+    website = EXCLUDED.website,
+    google_maps_url = EXCLUDED.google_maps_url,
+    rating = EXCLUDED.rating,
+    total_ratings = EXCLUDED.total_ratings,
+    price_level = EXCLUDED.price_level,
+    place_types = EXCLUDED.place_types,
+    updated_at = NOW()
+RETURNING id, google_place_id, name, address, latitude, longitude, plus_code, phone_number, website, google_maps_url, rating, total_ratings, price_level, place_types, reservation_url, created_at, updated_at
+`
+
+type UpsertPlaceParams struct {
+	GooglePlaceID string
+	Name          string
+	Address       pgtype.Text
+	Latitude      pgtype.Float8
+	Longitude     pgtype.Float8
+	PhoneNumber   pgtype.Text
+	Website       pgtype.Text
+	GoogleMapsUrl pgtype.Text
+	Rating        pgtype.Numeric
+	TotalRatings  pgtype.Int4
+	PriceLevel    pgtype.Int2
+	PlaceTypes    []string
+}
+
+func (q *Queries) UpsertPlace(ctx context.Context, arg UpsertPlaceParams) (Place, error) {
+	row := q.db.QueryRow(ctx, upsertPlace,
+		arg.GooglePlaceID,
+		arg.Name,
+		arg.Address,
+		arg.Latitude,
+		arg.Longitude,
+		arg.PhoneNumber,
+		arg.Website,
+		arg.GoogleMapsUrl,
+		arg.Rating,
+		arg.TotalRatings,
+		arg.PriceLevel,
+		arg.PlaceTypes,
+	)
+	var i Place
+	err := row.Scan(
+		&i.ID,
+		&i.GooglePlaceID,
+		&i.Name,
+		&i.Address,
+		&i.Latitude,
+		&i.Longitude,
+		&i.PlusCode,
+		&i.PhoneNumber,
+		&i.Website,
+		&i.GoogleMapsUrl,
+		&i.Rating,
+		&i.TotalRatings,
+		&i.PriceLevel,
+		&i.PlaceTypes,
+		&i.ReservationUrl,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

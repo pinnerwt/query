@@ -96,6 +96,38 @@ func (q *Queries) InsertDiscoveryQuery(ctx context.Context, arg InsertDiscoveryQ
 	return i, err
 }
 
+const listDiscoveryQueries = `-- name: ListDiscoveryQueries :many
+SELECT id, latitude, longitude, radius, place_type, result_count, created_at FROM discovery_queries ORDER BY id
+`
+
+func (q *Queries) ListDiscoveryQueries(ctx context.Context) ([]DiscoveryQuery, error) {
+	rows, err := q.db.Query(ctx, listDiscoveryQueries)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DiscoveryQuery
+	for rows.Next() {
+		var i DiscoveryQuery
+		if err := rows.Scan(
+			&i.ID,
+			&i.Latitude,
+			&i.Longitude,
+			&i.Radius,
+			&i.PlaceType,
+			&i.ResultCount,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPendingDiscoveries = `-- name: ListPendingDiscoveries :many
 SELECT id, query_id, google_place_id, name, address, latitude, longitude, place_types, status, discovered_at FROM place_discoveries WHERE status = 'pending' ORDER BY discovered_at
 `

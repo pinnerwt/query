@@ -1,2 +1,6 @@
 .worktrees/
 deploy/.env
+.env
+/seed
+/fetch
+photos/

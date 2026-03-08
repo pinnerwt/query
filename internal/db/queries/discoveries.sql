@@ -14,6 +14,9 @@ SELECT * FROM place_discoveries WHERE status = 'pending' ORDER BY discovered_at;
 -- name: MarkDiscoveryFetched :exec
 UPDATE place_discoveries SET status = 'fetched' WHERE google_place_id = $1;
 
+-- name: ListDiscoveryQueries :many
+SELECT * FROM discovery_queries ORDER BY id;
+
 -- name: CountDiscoveriesByStatus :one
 SELECT
     COUNT(*) FILTER (WHERE status = 'pending') AS pending,
