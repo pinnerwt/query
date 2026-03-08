@@ -1,0 +1,43 @@
+services:
+  pg-primary:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-query}
+      POSTGRES_USER: ${POSTGRES_USER:-query}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-query}
+    volumes:
+      - pg-primary-data:/var/lib/postgresql/data
+      - ./postgres/primary/postgresql.conf:/etc/postgresql/postgresql.conf
+      - ./postgres/primary/pg_hba.conf:/etc/postgresql/pg_hba.conf
+      - ./postgres/primary/init-replication.sh:/docker-entrypoint-initdb.d/init-replication.sh
+      - ./migrations/run-migrations.sh:/docker-entrypoint-initdb.d/zz-run-migrations.sh
+      - ../migrations:/migrations:ro
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf -c hba_file=/etc/postgresql/pg_hba.conf
+    healthcheck:
+      test: pg_isready -U ${POSTGRES_USER:-query}
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  pg-replica:
+    image: postgres:16-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-query}
+      POSTGRES_USER: ${POSTGRES_USER:-query}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-query}
+      PRIMARY_HOST: pg-primary
+    volumes:
+      - pg-replica-data:/var/lib/postgresql/data
+      - ./postgres/replica/entrypoint.sh:/entrypoint.sh
+    entrypoint: /entrypoint.sh
+    depends_on:
+      pg-primary:
+        condition: service_healthy
+
+volumes:
+  pg-primary-data:
+  pg-replica-data:
