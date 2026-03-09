@@ -335,7 +335,7 @@ const indexHTML = `<!DOCTYPE html>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, "Noto Sans TC", "Microsoft JhengHei", sans-serif; background: #f5f5f5; color: #333; }
-.container { max-width: 480px; margin: 0 auto; min-height: 100vh; background: #fff; }
+.container { max-width: 480px; margin: 0 auto; min-height: 100vh; background: #fff; padding-bottom: 70px; }
 header { background: #e74c3c; color: #fff; padding: 16px 20px; position: sticky; top: 0; z-index: 10; }
 header h1 { font-size: 20px; }
 header .back { cursor: pointer; font-size: 14px; margin-top: 4px; opacity: 0.8; display: none; }
@@ -352,15 +352,78 @@ header .back:hover { opacity: 1; }
 .menu-view { display: none; }
 .category { margin-bottom: 8px; }
 .category-header { background: #fafafa; padding: 12px 20px; font-size: 15px; font-weight: 700; color: #e74c3c; border-bottom: 1px solid #eee; position: sticky; top: 56px; z-index: 5; }
-.menu-item { display: flex; justify-content: space-between; align-items: flex-start; padding: 14px 20px; border-bottom: 1px solid #f0f0f0; }
+.menu-item { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-bottom: 1px solid #f0f0f0; }
 .menu-item:last-child { border-bottom: none; }
-.item-info { flex: 1; }
+.item-info { flex: 1; min-width: 0; }
 .item-name { font-size: 16px; font-weight: 500; }
 .item-desc { font-size: 12px; color: #999; margin-top: 2px; }
-.item-price { font-size: 16px; font-weight: 700; color: #e74c3c; white-space: nowrap; margin-left: 16px; }
-.item-price::before { content: "NT$"; font-size: 12px; font-weight: 400; }
+.item-right { display: flex; align-items: center; gap: 10px; margin-left: 12px; flex-shrink: 0; }
+.item-price { font-size: 16px; font-weight: 700; color: #e74c3c; white-space: nowrap; }
 .item-price.unknown { color: #999; font-weight: 500; }
-.item-price.unknown::before { content: ""; }
+
+/* Add button */
+.add-btn { width: 28px; height: 28px; border-radius: 50%; background: #e74c3c; color: #fff; border: none; font-size: 18px; line-height: 28px; text-align: center; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+.add-btn:hover { background: #c0392b; }
+.add-btn:active { transform: scale(0.92); }
+
+/* Modal overlay */
+.modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 100; justify-content: center; align-items: flex-end; }
+.modal-overlay.active { display: flex; }
+.modal-content { background: #fff; width: 100%; max-width: 480px; border-radius: 16px 16px 0 0; padding: 24px 20px; max-height: 80vh; overflow-y: auto; }
+.modal-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; }
+.modal-close { position: absolute; top: 16px; right: 20px; font-size: 24px; cursor: pointer; color: #999; background: none; border: none; }
+
+/* Tier picker */
+.tier-option { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border: 1px solid #eee; border-radius: 10px; margin-bottom: 10px; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+.tier-option:hover { background: #fef5f5; border-color: #e74c3c; }
+.tier-label { font-size: 16px; font-weight: 500; }
+.tier-price { font-size: 16px; font-weight: 700; color: #e74c3c; }
+
+/* Combo builder */
+.combo-group-title { font-size: 15px; font-weight: 700; color: #e74c3c; margin-bottom: 4px; }
+.combo-group-hint { font-size: 12px; color: #999; margin-bottom: 10px; }
+.combo-option { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border: 1px solid #eee; border-radius: 10px; margin-bottom: 8px; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+.combo-option:hover { background: #fef5f5; border-color: #e74c3c; }
+.combo-option.selected { background: #fef5f5; border-color: #e74c3c; }
+.combo-option .check { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #ccc; margin-right: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.combo-option.selected .check { border-color: #e74c3c; background: #e74c3c; color: #fff; font-size: 12px; }
+.combo-option-left { display: flex; align-items: center; }
+.combo-option-adj { font-size: 14px; color: #999; }
+.combo-total { font-size: 17px; font-weight: 700; color: #e74c3c; text-align: center; margin: 16px 0 8px; }
+.combo-add-btn { width: 100%; padding: 14px; background: #e74c3c; color: #fff; border: none; border-radius: 10px; font-size: 16px; font-weight: 700; cursor: pointer; }
+.combo-add-btn:disabled { background: #ccc; cursor: not-allowed; }
+.combo-steps { display: flex; gap: 6px; margin-bottom: 16px; }
+.combo-step { width: 8px; height: 8px; border-radius: 50%; background: #ddd; }
+.combo-step.active { background: #e74c3c; }
+.combo-step.done { background: #2ecc71; }
+
+/* Cart bar */
+.cart-bar { display: none; position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; height: 60px; background: #333; color: #fff; z-index: 50; cursor: pointer; padding: 0 20px; align-items: center; justify-content: space-between; font-size: 16px; font-weight: 600; }
+.cart-bar.visible { display: flex; }
+.cart-bar-left { display: flex; align-items: center; gap: 8px; }
+.cart-bar-total { font-size: 18px; font-weight: 700; }
+
+/* Cart panel */
+.cart-panel { display: none; position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; max-height: 60vh; background: #fff; z-index: 49; border-radius: 16px 16px 0 0; box-shadow: 0 -4px 20px rgba(0,0,0,0.15); overflow-y: auto; padding: 20px; }
+.cart-panel.visible { display: block; }
+.cart-panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.cart-panel-title { font-size: 18px; font-weight: 700; }
+.cart-panel-close { font-size: 24px; cursor: pointer; color: #999; background: none; border: none; }
+.cart-item { display: flex; align-items: center; padding: 12px 0; border-bottom: 1px solid #f0f0f0; }
+.cart-item:last-child { border-bottom: none; }
+.cart-item-info { flex: 1; min-width: 0; }
+.cart-item-name { font-size: 15px; font-weight: 500; }
+.cart-item-detail { font-size: 12px; color: #999; margin-top: 2px; }
+.cart-item-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.cart-item-subtotal { font-size: 15px; font-weight: 700; color: #e74c3c; min-width: 60px; text-align: right; }
+.qty-controls { display: flex; align-items: center; gap: 0; }
+.qty-btn { width: 28px; height: 28px; border: 1px solid #ddd; background: #fff; color: #333; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.qty-btn:first-child { border-radius: 6px 0 0 6px; }
+.qty-btn:last-child { border-radius: 0 6px 6px 0; }
+.qty-btn:hover { background: #f5f5f5; }
+.qty-val { width: 32px; height: 28px; border-top: 1px solid #ddd; border-bottom: 1px solid #ddd; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; }
+.clear-cart-btn { width: 100%; padding: 12px; background: #fff; color: #e74c3c; border: 1px solid #e74c3c; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 16px; }
+.clear-cart-btn:hover { background: #fef5f5; }
 
 .loading { text-align: center; padding: 40px; color: #999; }
 .empty { text-align: center; padding: 60px 20px; color: #999; }
@@ -369,7 +432,7 @@ header .back:hover { opacity: 1; }
 <body>
 <div class="container">
   <header>
-    <div class="back" id="back" onclick="showList()">← 返回餐廳列表</div>
+    <div class="back" id="back" onclick="showList()">&#8592; 返回餐廳列表</div>
     <h1 id="title">餐廳菜單</h1>
     <a href="/debug" style="position:absolute;top:16px;right:20px;color:rgba(255,255,255,0.5);font-size:12px;text-decoration:none;">Debug</a>
   </header>
@@ -378,25 +441,424 @@ header .back:hover { opacity: 1; }
   </div>
   <div id="menu" class="menu-view"></div>
 </div>
-<script>
-const listEl = document.getElementById('list');
-const menuEl = document.getElementById('menu');
-const titleEl = document.getElementById('title');
-const backEl = document.getElementById('back');
 
+<!-- Modal overlay for tier picker / combo builder -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModalOnBackdrop(event)">
+  <div class="modal-content" id="modalContent"></div>
+</div>
+
+<!-- Cart bar -->
+<div class="cart-bar" id="cartBar" onclick="toggleCartPanel()">
+  <div class="cart-bar-left">
+    <span id="cartBarIcon">&#128722;</span>
+    <span id="cartBarCount"></span>
+  </div>
+  <div class="cart-bar-total" id="cartBarTotal"></div>
+</div>
+
+<!-- Cart panel -->
+<div class="cart-panel" id="cartPanel">
+  <div class="cart-panel-header">
+    <div class="cart-panel-title">購物車</div>
+    <button class="cart-panel-close" onclick="toggleCartPanel()">&#10005;</button>
+  </div>
+  <div id="cartPanelItems"></div>
+  <button class="clear-cart-btn" onclick="clearCart()">清空購物車</button>
+</div>
+
+<script>
+var listEl = document.getElementById('list');
+var menuEl = document.getElementById('menu');
+var titleEl = document.getElementById('title');
+var backEl = document.getElementById('back');
+var modalOverlay = document.getElementById('modalOverlay');
+var modalContent = document.getElementById('modalContent');
+var cartBar = document.getElementById('cartBar');
+var cartBarCount = document.getElementById('cartBarCount');
+var cartBarTotal = document.getElementById('cartBarTotal');
+var cartPanel = document.getElementById('cartPanel');
+var cartPanelItems = document.getElementById('cartPanelItems');
+
+var cart = { restaurantId: null, items: [] };
+var cartPanelOpen = false;
+var currentMenuData = null;
+
+function esc(s) {
+  var d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function formatPrice(p) {
+  if (p === -1) return '未知';
+  if (p === -2) return '時價';
+  return 'NT$' + p;
+}
+
+/* ---- Cart Functions ---- */
+function addToCart(id, name, price, tierLabel) {
+  var cartId = tierLabel ? 'item_' + id + '_tier_' + tierLabel : 'item_' + id;
+  for (var i = 0; i < cart.items.length; i++) {
+    if (cart.items[i].id === cartId) {
+      cart.items[i].qty += 1;
+      saveCart();
+      renderCart();
+      return;
+    }
+  }
+  var entry = { id: cartId, name: name, price: price, qty: 1 };
+  if (tierLabel) entry.tierLabel = tierLabel;
+  cart.items.push(entry);
+  saveCart();
+  renderCart();
+}
+
+function addComboToCart(comboId, name, price, choices) {
+  var cartId = 'combo_' + comboId + '_' + Date.now();
+  var totalAdj = 0;
+  for (var i = 0; i < choices.length; i++) {
+    totalAdj += choices[i].adjustment;
+  }
+  cart.items.push({
+    id: cartId,
+    name: name,
+    price: price + totalAdj,
+    qty: 1,
+    comboId: comboId,
+    comboChoices: choices
+  });
+  saveCart();
+  renderCart();
+}
+
+function updateQty(index, delta) {
+  cart.items[index].qty += delta;
+  if (cart.items[index].qty <= 0) {
+    cart.items.splice(index, 1);
+  }
+  saveCart();
+  renderCart();
+}
+
+function clearCart() {
+  cart.items = [];
+  saveCart();
+  renderCart();
+  cartPanelOpen = false;
+  cartPanel.classList.remove('visible');
+}
+
+function saveCart() {
+  if (cart.restaurantId !== null) {
+    try {
+      localStorage.setItem('cart_' + cart.restaurantId, JSON.stringify(cart.items));
+    } catch(e) {}
+  }
+}
+
+function loadCart(rid) {
+  cart.restaurantId = rid;
+  cart.items = [];
+  try {
+    var saved = localStorage.getItem('cart_' + rid);
+    if (saved) {
+      cart.items = JSON.parse(saved) || [];
+    }
+  } catch(e) {
+    cart.items = [];
+  }
+  cartPanelOpen = false;
+  cartPanel.classList.remove('visible');
+  renderCart();
+}
+
+function getCartTotal() {
+  var total = 0;
+  for (var i = 0; i < cart.items.length; i++) {
+    total += cart.items[i].price * cart.items[i].qty;
+  }
+  return total;
+}
+
+function getCartCount() {
+  var count = 0;
+  for (var i = 0; i < cart.items.length; i++) {
+    count += cart.items[i].qty;
+  }
+  return count;
+}
+
+function renderCart() {
+  var count = getCartCount();
+  var total = getCartTotal();
+
+  if (count === 0) {
+    cartBar.classList.remove('visible');
+    cartPanel.classList.remove('visible');
+    cartPanelOpen = false;
+    return;
+  }
+
+  cartBar.classList.add('visible');
+  cartBarCount.textContent = count + ' 項商品';
+  cartBarTotal.textContent = 'NT$' + total;
+
+  /* Render panel items */
+  var html = '';
+  for (var i = 0; i < cart.items.length; i++) {
+    var item = cart.items[i];
+    var subtotal = item.price * item.qty;
+    var detail = '';
+    if (item.tierLabel) {
+      detail = item.tierLabel;
+    } else if (item.comboChoices) {
+      var parts = [];
+      for (var j = 0; j < item.comboChoices.length; j++) {
+        parts.push(item.comboChoices[j].option);
+      }
+      detail = parts.join(', ');
+    }
+    html += '<div class="cart-item">' +
+      '<div class="cart-item-info">' +
+      '<div class="cart-item-name">' + esc(item.name) + '</div>' +
+      (detail ? '<div class="cart-item-detail">' + esc(detail) + '</div>' : '') +
+      '</div>' +
+      '<div class="cart-item-right">' +
+      '<div class="qty-controls">' +
+      '<button class="qty-btn" onclick="updateQty(' + i + ',-1)">&#8722;</button>' +
+      '<div class="qty-val">' + item.qty + '</div>' +
+      '<button class="qty-btn" onclick="updateQty(' + i + ',1)">+</button>' +
+      '</div>' +
+      '<div class="cart-item-subtotal">NT$' + subtotal + '</div>' +
+      '</div>' +
+      '</div>';
+  }
+  cartPanelItems.innerHTML = html;
+}
+
+function toggleCartPanel() {
+  cartPanelOpen = !cartPanelOpen;
+  if (cartPanelOpen) {
+    cartPanel.classList.add('visible');
+  } else {
+    cartPanel.classList.remove('visible');
+  }
+}
+
+/* ---- Modal ---- */
+function openModal(html) {
+  modalContent.innerHTML = html;
+  modalOverlay.classList.add('active');
+}
+
+function closeModal() {
+  modalOverlay.classList.remove('active');
+  modalContent.innerHTML = '';
+}
+
+function closeModalOnBackdrop(e) {
+  if (e.target === modalOverlay) {
+    closeModal();
+  }
+}
+
+/* ---- Tier Picker ---- */
+function openTierPicker(itemId, itemName, tiers) {
+  var html = '<div style="position:relative;">' +
+    '<button class="modal-close" onclick="closeModal()">&#10005;</button>' +
+    '<div class="modal-title">' + esc(itemName) + '</div>';
+  for (var i = 0; i < tiers.length; i++) {
+    var t = tiers[i];
+    html += '<div class="tier-option" onclick="selectTier(' + itemId + ',\'' + esc(itemName).replace(/'/g, "\\'") + '\',' + t.price + ',\'' + esc(t.label).replace(/'/g, "\\'") + '\')">' +
+      '<span class="tier-label">' + esc(t.label) + '</span>' +
+      '<span class="tier-price">NT$' + t.price + '</span>' +
+      '</div>';
+  }
+  html += '</div>';
+  openModal(html);
+}
+
+function selectTier(itemId, itemName, price, tierLabel) {
+  addToCart(itemId, itemName, price, tierLabel);
+  closeModal();
+}
+
+/* ---- Combo Builder ---- */
+var comboState = null;
+
+function openComboBuilder(comboIdx) {
+  var combos = currentMenuData.combos || [];
+  var combo = combos[comboIdx];
+  if (!combo) return;
+
+  comboState = {
+    combo: combo,
+    currentGroup: 0,
+    selections: []
+  };
+  for (var i = 0; i < combo.groups.length; i++) {
+    comboState.selections.push([]);
+  }
+  renderComboBuilder();
+}
+
+function renderComboBuilder() {
+  var c = comboState;
+  var combo = c.combo;
+  var gi = c.currentGroup;
+  var group = combo.groups[gi];
+
+  /* Step dots */
+  var dots = '';
+  for (var s = 0; s < combo.groups.length; s++) {
+    var cls = 'combo-step';
+    if (s < gi) cls += ' done';
+    if (s === gi) cls += ' active';
+    dots += '<div class="' + cls + '"></div>';
+  }
+
+  /* Calculate running total */
+  var runTotal = combo.price;
+  for (var si = 0; si < c.selections.length; si++) {
+    for (var sj = 0; sj < c.selections[si].length; sj++) {
+      runTotal += c.selections[si][sj].adjustment;
+    }
+  }
+
+  /* Options */
+  var optHtml = '';
+  for (var oi = 0; oi < group.options.length; oi++) {
+    var opt = group.options[oi];
+    var isSelected = false;
+    for (var k = 0; k < c.selections[gi].length; k++) {
+      if (c.selections[gi][k].option === opt.name) { isSelected = true; break; }
+    }
+    var adjText = '';
+    if (opt.adjustment > 0) adjText = '+NT$' + opt.adjustment;
+    else if (opt.adjustment < 0) adjText = '-NT$' + Math.abs(opt.adjustment);
+
+    optHtml += '<div class="combo-option' + (isSelected ? ' selected' : '') + '" onclick="toggleComboOption(' + gi + ',' + oi + ')">' +
+      '<div class="combo-option-left">' +
+      '<div class="check">' + (isSelected ? '&#10003;' : '') + '</div>' +
+      '<span>' + esc(opt.name) + '</span>' +
+      '</div>' +
+      (adjText ? '<span class="combo-option-adj">' + adjText + '</span>' : '') +
+      '</div>';
+  }
+
+  /* Hint about min/max */
+  var hint = '';
+  if (group.min === group.max) {
+    hint = '請選擇 ' + group.min + ' 項';
+  } else {
+    hint = '請選擇 ' + group.min + ' ~ ' + group.max + ' 項';
+  }
+
+  /* Check if all groups satisfied */
+  var allSatisfied = true;
+  for (var ag = 0; ag < combo.groups.length; ag++) {
+    if (c.selections[ag].length < combo.groups[ag].min) {
+      allSatisfied = false;
+      break;
+    }
+  }
+
+  /* Navigation buttons */
+  var navHtml = '';
+  if (gi > 0) {
+    navHtml += '<button style="padding:10px 20px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;font-size:14px;" onclick="comboGroupNav(-1)">上一步</button>';
+  }
+  if (gi < combo.groups.length - 1) {
+    navHtml += '<button style="padding:10px 20px;border:1px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;font-size:14px;margin-left:8px;" onclick="comboGroupNav(1)"' +
+      (c.selections[gi].length < group.min ? ' disabled' : '') + '>下一步</button>';
+  }
+
+  var html = '<div style="position:relative;">' +
+    '<button class="modal-close" onclick="closeModal()">&#10005;</button>' +
+    '<div class="modal-title">' + esc(combo.name) + '</div>' +
+    (combo.description ? '<div style="font-size:13px;color:#999;margin-bottom:12px;">' + esc(combo.description) + '</div>' : '') +
+    '<div class="combo-steps">' + dots + '</div>' +
+    '<div class="combo-group-title">' + esc(group.name) + '</div>' +
+    '<div class="combo-group-hint">' + hint + ' (已選 ' + c.selections[gi].length + ')</div>' +
+    optHtml +
+    '<div class="combo-total">合計 NT$' + runTotal + '</div>' +
+    '<div style="display:flex;justify-content:center;gap:8px;margin-bottom:8px;">' + navHtml + '</div>' +
+    '<button class="combo-add-btn" onclick="confirmCombo()"' + (allSatisfied ? '' : ' disabled') + '>加入購物車</button>' +
+    '</div>';
+
+  openModal(html);
+}
+
+function toggleComboOption(groupIdx, optIdx) {
+  var c = comboState;
+  var group = c.combo.groups[groupIdx];
+  var opt = group.options[optIdx];
+
+  /* Check if already selected */
+  var foundIdx = -1;
+  for (var i = 0; i < c.selections[groupIdx].length; i++) {
+    if (c.selections[groupIdx][i].option === opt.name) {
+      foundIdx = i;
+      break;
+    }
+  }
+
+  if (foundIdx >= 0) {
+    /* Deselect */
+    c.selections[groupIdx].splice(foundIdx, 1);
+  } else {
+    if (group.min === 1 && group.max === 1) {
+      /* Single select: replace */
+      c.selections[groupIdx] = [{ group: group.name, option: opt.name, adjustment: opt.adjustment }];
+      /* Auto-advance if there is a next group */
+      if (groupIdx < c.combo.groups.length - 1) {
+        c.currentGroup = groupIdx + 1;
+        renderComboBuilder();
+        return;
+      }
+    } else {
+      /* Multi select */
+      if (c.selections[groupIdx].length < group.max) {
+        c.selections[groupIdx].push({ group: group.name, option: opt.name, adjustment: opt.adjustment });
+      }
+    }
+  }
+
+  renderComboBuilder();
+}
+
+function comboGroupNav(delta) {
+  comboState.currentGroup += delta;
+  renderComboBuilder();
+}
+
+function confirmCombo() {
+  var c = comboState;
+  var allChoices = [];
+  for (var i = 0; i < c.selections.length; i++) {
+    for (var j = 0; j < c.selections[i].length; j++) {
+      allChoices.push(c.selections[i][j]);
+    }
+  }
+  addComboToCart(c.combo.id, c.combo.name, c.combo.price, allChoices);
+  closeModal();
+  comboState = null;
+}
+
+/* ---- Restaurant list & menu ---- */
 async function loadRestaurants() {
-  const res = await fetch('/api/restaurants');
-  const data = await res.json();
+  var res = await fetch('/api/restaurants');
+  var data = await res.json();
   if (!data || data.length === 0) {
     listEl.innerHTML = '<div class="empty">目前沒有菜單資料</div>';
     return;
   }
-  listEl.innerHTML = data.map(r =>
-    '<div class="restaurant-item" onclick="showMenu(' + r.restaurant_id + ',\'' + esc(r.name) + '\')">' +
+  listEl.innerHTML = data.map(function(r) {
+    return '<div class="restaurant-item" onclick="showMenu(' + r.restaurant_id + ',\'' + esc(r.name).replace(/'/g, "\\'") + '\')">' +
     '<div class="name">' + esc(r.name) + '</div>' +
     (r.address ? '<div class="addr">' + esc(r.address) + '</div>' : '') +
-    '</div>'
-  ).join('');
+    '</div>';
+  }).join('');
 }
 
 async function showMenu(rid, name) {
@@ -406,41 +868,75 @@ async function showMenu(rid, name) {
   titleEl.textContent = name;
   backEl.style.display = 'block';
 
-  const res = await fetch('/api/menu?restaurant_id=' + rid);
-  const data = await res.json();
-  const cats = data.categories || [];
-  const combos = data.combos || [];
+  loadCart(rid);
+
+  var res = await fetch('/api/menu?restaurant_id=' + rid);
+  var data = await res.json();
+  currentMenuData = data;
+  var cats = data.categories || [];
+  var combos = data.combos || [];
   if (cats.length === 0 && combos.length === 0) {
     menuEl.innerHTML = '<div class="empty">此餐廳尚無菜單</div>';
     return;
   }
-  let html = cats.filter(cat => cat.items && cat.items.length > 0).map(cat =>
-    '<div class="category">' +
+
+  var html = cats.filter(function(cat) { return cat.items && cat.items.length > 0; }).map(function(cat) {
+    return '<div class="category">' +
     '<div class="category-header">' + esc(cat.name) + '</div>' +
-    cat.items.map(it =>
-      '<div class="menu-item">' +
-      '<div class="item-info">' +
-      '<div class="item-name">' + esc(it.name) + '</div>' +
-      (it.description ? '<div class="item-desc">' + esc(it.description) + '</div>' : '') +
-      (it.price_tiers && it.price_tiers.length > 0 ? '<div class="item-desc">' + it.price_tiers.map(t => esc(t.label) + ' NT$' + t.price).join(' / ') + '</div>' : '') +
-      '</div>' +
-      (it.price > 0 ? '<div class="item-price">' + it.price + '</div>' : it.price === -2 ? '<div class="item-price unknown">時價</div>' : it.price === -1 ? '<div class="item-price unknown">未知</div>' : '') +
-      '</div>'
-    ).join('') +
-    '</div>'
-  ).join('');
+    cat.items.map(function(it) {
+      var hasTiers = it.price_tiers && it.price_tiers.length > 0;
+      var canAdd = it.price >= 0;
+      var priceHtml = '';
+      var btnHtml = '';
+
+      if (hasTiers) {
+        /* Find lowest price among tiers */
+        var lowest = it.price_tiers[0].price;
+        for (var ti = 1; ti < it.price_tiers.length; ti++) {
+          if (it.price_tiers[ti].price < lowest) lowest = it.price_tiers[ti].price;
+        }
+        priceHtml = '<div class="item-price">NT$' + lowest + '起</div>';
+        btnHtml = '<button class="add-btn" onclick="event.stopPropagation();openTierPicker(' + it.id + ',\'' + esc(it.name).replace(/'/g, "\\'") + '\',' + JSON.stringify(it.price_tiers).replace(/"/g, '&quot;') + ')">+</button>';
+      } else if (it.price === -1) {
+        priceHtml = '<div class="item-price unknown">未知</div>';
+      } else if (it.price === -2) {
+        priceHtml = '<div class="item-price unknown">時價</div>';
+      } else {
+        priceHtml = '<div class="item-price">NT$' + it.price + '</div>';
+        btnHtml = '<button class="add-btn" onclick="event.stopPropagation();addToCart(' + it.id + ',\'' + esc(it.name).replace(/'/g, "\\'") + '\',' + it.price + ')">+</button>';
+      }
+
+      return '<div class="menu-item">' +
+        '<div class="item-info">' +
+        '<div class="item-name">' + esc(it.name) + '</div>' +
+        (it.description ? '<div class="item-desc">' + esc(it.description) + '</div>' : '') +
+        (hasTiers ? '<div class="item-desc">' + it.price_tiers.map(function(t) { return esc(t.label) + ' NT$' + t.price; }).join(' / ') + '</div>' : '') +
+        '</div>' +
+        '<div class="item-right">' +
+        priceHtml +
+        btnHtml +
+        '</div>' +
+        '</div>';
+    }).join('') +
+    '</div>';
+  }).join('');
+
   if (combos.length > 0) {
     html += '<div class="category"><div class="category-header">套餐</div>' +
-      combos.map(c =>
-        '<div class="menu-item">' +
-        '<div class="item-info">' +
-        '<div class="item-name">' + esc(c.name) + '</div>' +
-        (c.description ? '<div class="item-desc">' + esc(c.description) + '</div>' : '') +
-        '</div>' +
-        '<div class="item-price">' + c.price + '</div>' +
-        '</div>'
-      ).join('') + '</div>';
+      combos.map(function(c, ci) {
+        return '<div class="menu-item">' +
+          '<div class="item-info">' +
+          '<div class="item-name">' + esc(c.name) + '</div>' +
+          (c.description ? '<div class="item-desc">' + esc(c.description) + '</div>' : '') +
+          '</div>' +
+          '<div class="item-right">' +
+          '<div class="item-price">NT$' + c.price + '</div>' +
+          '<button class="add-btn" onclick="event.stopPropagation();openComboBuilder(' + ci + ')">+</button>' +
+          '</div>' +
+          '</div>';
+      }).join('') + '</div>';
   }
+
   menuEl.innerHTML = html;
 }
 
@@ -449,13 +945,20 @@ function showList() {
   menuEl.style.display = 'none';
   titleEl.textContent = '餐廳菜單';
   backEl.style.display = 'none';
+  cartBar.classList.remove('visible');
+  cartPanel.classList.remove('visible');
+  cartPanelOpen = false;
+  currentMenuData = null;
 }
 
-function esc(s) {
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
-}
+/* Fix tier picker to handle JSON tiers passed as string */
+var _origOpenTierPicker = openTierPicker;
+openTierPicker = function(itemId, itemName, tiers) {
+  if (typeof tiers === 'string') {
+    tiers = JSON.parse(tiers);
+  }
+  _origOpenTierPicker(itemId, itemName, tiers);
+};
 
 loadRestaurants();
 </script>
