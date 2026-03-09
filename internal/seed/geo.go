@@ -26,25 +26,32 @@ func HaversineDistance(lat1, lng1, lat2, lng2 float64) float64 {
 	return earthRadiusMeters * c
 }
 
-// GenerateGridPoints generates a square grid of points spaced 2*subRadius*0.8 apart,
-// clipped to a circle of the given radius around (centerLat, centerLng).
+// GenerateGridPoints generates a hexagonal grid of points that fully covers
+// a circle of the given radius around (centerLat, centerLng).
+// Uses a hex lattice (dx = subRadius*√3, dy = 1.5*subRadius) which is the most
+// efficient circle covering of the plane — ~23% fewer queries than a square grid
+// with zero coverage gaps.
 func GenerateGridPoints(centerLat, centerLng, radius, subRadius float64) []GridPoint {
-	spacing := 2 * subRadius * 0.8
-	// Convert spacing to approximate degrees
-	latStep := spacing / 111_320.0
-	lngStep := spacing / (111_320.0 * math.Cos(toRad(centerLat)))
+	dx := subRadius * math.Sqrt(3)
+	dy := 1.5 * subRadius
 
 	clipDist := radius + subRadius
 
-	// How many steps in each direction
-	nLat := int(math.Ceil(clipDist / spacing))
-	nLng := int(math.Ceil(clipDist / spacing))
+	latStep := dy / 111_320.0
+	lngStep := dx / (111_320.0 * math.Cos(toRad(centerLat)))
+
+	nLat := int(math.Ceil(clipDist / dy))
+	nLng := int(math.Ceil(clipDist / dx))
 
 	var points []GridPoint
 	for i := -nLat; i <= nLat; i++ {
+		offset := 0.0
+		if i%2 != 0 {
+			offset = lngStep / 2
+		}
 		for j := -nLng; j <= nLng; j++ {
 			lat := centerLat + float64(i)*latStep
-			lng := centerLng + float64(j)*lngStep
+			lng := centerLng + float64(j)*lngStep + offset
 			if HaversineDistance(centerLat, centerLng, lat, lng) <= clipDist {
 				points = append(points, GridPoint{Lat: lat, Lng: lng})
 			}
@@ -53,17 +60,20 @@ func GenerateGridPoints(centerLat, centerLng, radius, subRadius float64) []GridP
 	return points
 }
 
-// SubdivideCell splits a cell into 4 child cells, each with half the radius.
+// SubdivideCell splits a cell into 4 child cells with centers at (±R/2, ±R/2).
+// Child radius is R/√2 to fully cover the parent circle (R/2 leaves gaps at cardinal edges).
+// Overlap is handled by place ID dedup.
 func SubdivideCell(center GridPoint, radius float64) []GridCell {
 	halfR := radius / 2
+	childR := radius / math.Sqrt(2)
 	offset := halfR / 111_320.0
 	lngOffset := halfR / (111_320.0 * math.Cos(toRad(center.Lat)))
 
 	return []GridCell{
-		{Point: GridPoint{Lat: center.Lat + offset, Lng: center.Lng + lngOffset}, Radius: halfR},
-		{Point: GridPoint{Lat: center.Lat + offset, Lng: center.Lng - lngOffset}, Radius: halfR},
-		{Point: GridPoint{Lat: center.Lat - offset, Lng: center.Lng + lngOffset}, Radius: halfR},
-		{Point: GridPoint{Lat: center.Lat - offset, Lng: center.Lng - lngOffset}, Radius: halfR},
+		{Point: GridPoint{Lat: center.Lat + offset, Lng: center.Lng + lngOffset}, Radius: childR},
+		{Point: GridPoint{Lat: center.Lat + offset, Lng: center.Lng - lngOffset}, Radius: childR},
+		{Point: GridPoint{Lat: center.Lat - offset, Lng: center.Lng + lngOffset}, Radius: childR},
+		{Point: GridPoint{Lat: center.Lat - offset, Lng: center.Lng - lngOffset}, Radius: childR},
 	}
 }
 

@@ -96,6 +96,67 @@ func (q *Queries) InsertDiscoveryQuery(ctx context.Context, arg InsertDiscoveryQ
 	return i, err
 }
 
+const listCompletedGridCells = `-- name: ListCompletedGridCells :many
+SELECT DISTINCT latitude, longitude, radius, place_type
+FROM discovery_queries
+`
+
+type ListCompletedGridCellsRow struct {
+	Latitude  float64
+	Longitude float64
+	Radius    float64
+	PlaceType string
+}
+
+func (q *Queries) ListCompletedGridCells(ctx context.Context) ([]ListCompletedGridCellsRow, error) {
+	rows, err := q.db.Query(ctx, listCompletedGridCells)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCompletedGridCellsRow
+	for rows.Next() {
+		var i ListCompletedGridCellsRow
+		if err := rows.Scan(
+			&i.Latitude,
+			&i.Longitude,
+			&i.Radius,
+			&i.PlaceType,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDiscoveredPlaceIDs = `-- name: ListDiscoveredPlaceIDs :many
+SELECT google_place_id FROM place_discoveries
+`
+
+func (q *Queries) ListDiscoveredPlaceIDs(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, listDiscoveredPlaceIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var google_place_id string
+		if err := rows.Scan(&google_place_id); err != nil {
+			return nil, err
+		}
+		items = append(items, google_place_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDiscoveryQueries = `-- name: ListDiscoveryQueries :many
 SELECT id, latitude, longitude, radius, place_type, result_count, created_at FROM discovery_queries ORDER BY id
 `

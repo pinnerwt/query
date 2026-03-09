@@ -60,7 +60,7 @@ func TestDiscoverSweep(t *testing.T) {
 		Radius:    100,
 		SubRadius: 100,
 		PlaceType: "restaurant",
-	})
+	}, nil)
 	require.NoError(t, err)
 	assert.Greater(t, len(cellResults), 0)
 	assert.Greater(t, stats.CellsProbed, 0)
@@ -120,7 +120,7 @@ func TestDiscoverSweepSaturation(t *testing.T) {
 		Radius:    50,
 		SubRadius: 50,
 		PlaceType: "restaurant",
-	})
+	}, nil)
 	require.NoError(t, err)
 	// Should have subdivided, so more than 1 cell probed
 	assert.Greater(t, stats.CellsProbed, 1)

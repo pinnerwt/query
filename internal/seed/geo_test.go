@@ -62,6 +62,46 @@ func TestSubdivideCell(t *testing.T) {
 		assert.InDelta(t, subRadius/2, dist, subRadius/2+50)
 	}
 
-	// Each child should have half the parent radius
-	assert.InDelta(t, subRadius/2, children[0].Radius, 1.0)
+	// Each child should have radius/√2 (fully covers parent circle)
+	assert.InDelta(t, subRadius/math.Sqrt(2), children[0].Radius, 1.0)
+}
+
+func TestGenerateGridPointsFullCoverage(t *testing.T) {
+	// Verify that every point within the target radius is covered by at least
+	// one grid cell's search circle (no gaps).
+	centerLat, centerLng := 25.0, 121.0
+	radius := 10000.0  // 10km
+	subRadius := 5000.0 // 5km
+
+	points := GenerateGridPoints(centerLat, centerLng, radius, subRadius)
+
+	// Sample many points inside the target radius and verify each is within
+	// subRadius of at least one grid point.
+	latStep := 0.002 // ~220m
+	lngStep := 0.002
+	uncovered := 0
+	tested := 0
+
+	for lat := centerLat - 0.1; lat <= centerLat+0.1; lat += latStep {
+		for lng := centerLng - 0.1; lng <= centerLng+0.1; lng += lngStep {
+			if HaversineDistance(centerLat, centerLng, lat, lng) > radius {
+				continue
+			}
+			tested++
+			covered := false
+			for _, p := range points {
+				if HaversineDistance(lat, lng, p.Lat, p.Lng) <= subRadius {
+					covered = true
+					break
+				}
+			}
+			if !covered {
+				uncovered++
+			}
+		}
+	}
+
+	assert.Greater(t, tested, 100, "should test a meaningful number of points")
+	assert.Equal(t, 0, uncovered,
+		"%d of %d sample points not covered by any grid cell", uncovered, tested)
 }

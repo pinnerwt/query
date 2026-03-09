@@ -49,7 +49,7 @@ func TestDiscoverySweepIntegration(t *testing.T) {
 		Radius:    100,
 		SubRadius: 100,
 		PlaceType: "restaurant",
-	})
+	}, nil)
 	require.NoError(t, err)
 	assert.Greater(t, stats.NewPlaces, 0)
 

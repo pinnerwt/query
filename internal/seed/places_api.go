@@ -157,21 +157,42 @@ func (c *PlacesClient) searchNearby(ctx context.Context, lat, lng, radius float6
 	req.Header.Set("X-Goog-Api-Key", c.apiKey)
 	req.Header.Set("X-Goog-FieldMask", fieldMask)
 
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("http request: %w", err)
-	}
-	defer resp.Body.Close()
+	var respBody []byte
+	for attempt := 0; attempt < 5; attempt++ {
+		resp, err := c.http.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("http request: %w", err)
+		}
 
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ = io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if resp.StatusCode == http.StatusOK {
+			var result SearchNearbyResponse
+			if err := json.Unmarshal(respBody, &result); err != nil {
+				return nil, fmt.Errorf("decode response: %w", err)
+			}
+			return result.Places, nil
+		}
+
+		if resp.StatusCode == 429 {
+			wait := time.Duration(1<<uint(attempt)) * time.Second // 1s, 2s, 4s, 8s, 16s
+			fmt.Printf("    Rate limited, waiting %s (attempt %d/5)...\n", wait, attempt+1)
+			time.Sleep(wait)
+
+			// Rebuild request since body was consumed
+			req, err = http.NewRequestWithContext(ctx, "POST", c.baseURL+"/places:searchNearby", bytes.NewReader(body))
+			if err != nil {
+				return nil, fmt.Errorf("create request: %w", err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Goog-Api-Key", c.apiKey)
+			req.Header.Set("X-Goog-FieldMask", fieldMask)
+			continue
+		}
+
 		return nil, fmt.Errorf("searchNearby returned %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	var result SearchNearbyResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
-	}
-
-	return result.Places, nil
+	return nil, fmt.Errorf("searchNearby: exhausted retries, last response: %s", string(respBody))
 }

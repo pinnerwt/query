@@ -23,3 +23,10 @@ SELECT
     COUNT(*) FILTER (WHERE status = 'fetched') AS fetched,
     COUNT(*) AS total
 FROM place_discoveries;
+
+-- name: ListDiscoveredPlaceIDs :many
+SELECT google_place_id FROM place_discoveries;
+
+-- name: ListCompletedGridCells :many
+SELECT DISTINCT latitude, longitude, radius, place_type
+FROM discovery_queries;

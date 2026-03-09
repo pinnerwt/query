@@ -32,6 +32,34 @@ cd deploy && cp .env.example .env && docker compose up -d
 
 # Build and run the seed CLI (Step 1: discovery, free)
 go build -o seed ./cmd/seed
+
+# Seed all Taiwan restaurants — main island (center=Chiayi, radius=210km, resumable)
+./seed --lat 23.60 --lng 120.95 --radius 210000 --sub-radius 50000 \
+    --types restaurant --lang zh-TW \
+    --api-key $GOOGLE_API_KEY \
+    --db "postgres://query:query@localhost:5432/query?sslmode=disable"
+
+# Seed outlying islands (run separately after main island)
+./seed --lat 23.583 --lng 119.583 --radius 30000 --sub-radius 10000 \
+    --types restaurant --lang zh-TW --checkpoint seed_checkpoint_penghu.json \
+    --api-key $GOOGLE_API_KEY --db "postgres://query:query@localhost:5432/query?sslmode=disable"
+./seed --lat 24.455 --lng 118.381 --radius 15000 --sub-radius 5000 \
+    --types restaurant --lang zh-TW --checkpoint seed_checkpoint_kinmen.json \
+    --api-key $GOOGLE_API_KEY --db "postgres://query:query@localhost:5432/query?sslmode=disable"
+./seed --lat 26.151 --lng 119.923 --radius 30000 --sub-radius 10000 \
+    --types restaurant --lang zh-TW --checkpoint seed_checkpoint_matsu.json \
+    --api-key $GOOGLE_API_KEY --db "postgres://query:query@localhost:5432/query?sslmode=disable"
+./seed --lat 22.662 --lng 121.490 --radius 5000 --sub-radius 5000 \
+    --types restaurant --lang zh-TW --checkpoint seed_checkpoint_green.json \
+    --api-key $GOOGLE_API_KEY --db "postgres://query:query@localhost:5432/query?sslmode=disable"
+./seed --lat 22.050 --lng 121.533 --radius 6000 --sub-radius 6000 \
+    --types restaurant --lang zh-TW --checkpoint seed_checkpoint_orchid.json \
+    --api-key $GOOGLE_API_KEY --db "postgres://query:query@localhost:5432/query?sslmode=disable"
+./seed --lat 22.337 --lng 120.369 --radius 3000 --sub-radius 3000 \
+    --types restaurant --lang zh-TW --checkpoint seed_checkpoint_xiaoliuqiu.json \
+    --api-key $GOOGLE_API_KEY --db "postgres://query:query@localhost:5432/query?sslmode=disable"
+
+# Seed a small area (e.g. Taipei)
 ./seed --lat 25.033 --lng 121.565 --radius 1000 --types restaurant \
     --lang zh-TW \
     --api-key $GOOGLE_API_KEY \
@@ -71,7 +99,7 @@ Go 1.25.0 project — a restaurant/place database backed by PostgreSQL.
 - `internal/db/dbtest/` — Test helper that spins up a PostgreSQL container via testcontainers-go and runs migrations with Goose
 - `tests/` — Integration tests against real PostgreSQL containers
 - `cmd/server/` — Server entry point (placeholder)
-- `cmd/seed/` — CLI for Step 1 discovery: grid sweep with Google Places API, stores to staging tables
+- `cmd/seed/` — CLI for Step 1 discovery: hexagonal grid sweep with Google Places API, stores to staging tables. Supports checkpointing (`--checkpoint`) for resumable sweeps and auto-caps sub-radius at 50,000m (API limit). Max depth 23 (~17m radius) to avoid saturation. Rate limited to 8 req/s.
 - `cmd/fetch/` — CLI for Step 2 detail fetch: replays discovery queries with advanced fields, promotes to `places`/`place_opening_hours`
 - `cmd/scrape/` — CLI for scraping menu photos from Google Maps using headless Chrome (chromedp). Supports `--proxy` for SOCKS5/HTTP proxies. Forces `hl=zh-TW` so Chinese selectors work regardless of proxy region.
 - `cmd/ocr/` — CLI for menu extraction with two-pass pipeline: GLM-OCR (Ollama, GPU) for raw text, then per-photo normalization via Qwen3.5 (Ollama) into structured JSON, followed by merge/dedup across photos. Includes perceptual dedup to skip near-duplicate photos and image resizing (default 800px max). Writes to `menu_categories`/`menu_items`/`menu_item_price_tiers`/`combo_meals` tables. Takes a Google Place ID, reads photos from `menu_photos/<place_id>/`.
