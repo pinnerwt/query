@@ -1,3 +1,9 @@
+-- name: DeleteMenuItemsByRestaurant :exec
+DELETE FROM menu_items WHERE restaurant_id = $1;
+
+-- name: DeleteMenuCategoriesByRestaurant :exec
+DELETE FROM menu_categories WHERE restaurant_id = $1;
+
 -- name: CreateMenuCategory :one
 INSERT INTO menu_categories (restaurant_id, name, sort_order)
 VALUES (@restaurant_id, @name, @sort_order)

@@ -74,3 +74,27 @@ func (q *Queries) GetRestaurantDetailsByPlaceID(ctx context.Context, placeID int
 	)
 	return i, err
 }
+
+const upsertRestaurantDetails = `-- name: UpsertRestaurantDetails :one
+INSERT INTO restaurant_details (place_id)
+VALUES ($1)
+ON CONFLICT (place_id) DO UPDATE SET updated_at = NOW()
+RETURNING id, place_id, minimum_spend, time_limit_minutes, dine_in, takeout, delivery, created_at, updated_at
+`
+
+func (q *Queries) UpsertRestaurantDetails(ctx context.Context, placeID int64) (RestaurantDetail, error) {
+	row := q.db.QueryRow(ctx, upsertRestaurantDetails, placeID)
+	var i RestaurantDetail
+	err := row.Scan(
+		&i.ID,
+		&i.PlaceID,
+		&i.MinimumSpend,
+		&i.TimeLimitMinutes,
+		&i.DineIn,
+		&i.Takeout,
+		&i.Delivery,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}

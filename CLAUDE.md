@@ -47,12 +47,12 @@ go build -o scrape ./cmd/scrape
 ./scrape --proxy socks5://host:port ChIJ41wbgbqrQjQR  # with proxy
 ./scrape --proxy http://user:pass@host:port ChIJ...    # with authenticated proxy
 
-# Build and run the OCR CLI (menu extraction via GLM-OCR + Ollama)
-# Requires: ollama serve running with glm-ocr model pulled
+# Build and run the OCR CLI (Step 4: menu extraction, two-pass)
+# Requires: ollama serve with glm-ocr + qwen3.5:9b models pulled
 go build -o ocr ./cmd/ocr
-./ocr menu_photos/ChIJ41wbgbqrQjQR75mxQgbywys/       # OCR all photos in directory
-./ocr menu_photos/ChIJ.../photo.jpg                    # OCR single image
-./ocr --ollama http://gpu-host:11434 menu_photos/...   # use remote Ollama instance
+./ocr --dry-run ChIJ41wbgbqrQjQR75mxQgbywys           # preview without DB write
+./ocr --db "postgres://..." ChIJ41wbgbqrQjQR75mxQgbywys  # extract & save to DB
+./ocr --max-photos 5 --db "postgres://..." ChIJ...     # OCR more photos (default: 3)
 ```
 
 ## Architecture
@@ -71,7 +71,7 @@ Go 1.25.0 project — a restaurant/place database backed by PostgreSQL.
 - `cmd/seed/` — CLI for Step 1 discovery: grid sweep with Google Places API, stores to staging tables
 - `cmd/fetch/` — CLI for Step 2 detail fetch: replays discovery queries with advanced fields, promotes to `places`/`place_opening_hours`
 - `cmd/scrape/` — CLI for scraping menu photos from Google Maps using headless Chrome (chromedp). Supports `--proxy` for SOCKS5/HTTP proxies. Forces `hl=zh-TW` so Chinese selectors work regardless of proxy region.
-- `cmd/ocr/` — CLI for menu text extraction from photos using GLM-OCR (0.9B VLM) via Ollama API. Accepts single images or directories.
+- `cmd/ocr/` — CLI for menu extraction with two-pass pipeline: GLM-OCR for raw text, Qwen3.5 9B for structured normalization. Writes to `menu_categories`/`menu_items` tables. Takes a Google Place ID, reads photos from `menu_photos/<place_id>/`.
 - `internal/seed/` — Google Places API client, grid sweep logic, geo helpers
 
 **sqlc config** (`sqlc.yaml`): Uses `pgx/v5` as the SQL package. Queries dir is `internal/db/queries`, schema dir is `migrations`, output goes to `internal/db/generated`.
@@ -84,8 +84,8 @@ Go 1.25.0 project — a restaurant/place database backed by PostgreSQL.
 1. `cmd/seed` — Discover places via free Google API calls, store in staging tables
 2. `cmd/fetch` — Replay discovery queries with advanced field masks (~$0.035/query), promote to `places`/`place_opening_hours`
 3. `cmd/scrape` — Scrape menu photos from Google Maps "菜單" tab via headless Chrome
-4. `cmd/ocr` — Extract menu items/prices from photos using GLM-OCR (0.9B VLM, runs locally via Ollama on GPU)
+4. `cmd/ocr` — Two-pass menu extraction: GLM-OCR reads photo text, Qwen3.5 9B normalizes into structured JSON, then inserts into `restaurant_details`/`menu_categories`/`menu_items`
 
-**GLM-OCR setup**: `ollama pull glm-ocr` then `ollama serve`. Requires GPU (tested on RTX 3090). The model outputs structured text from menu photos — works well on printed menus, less accurate on handwritten/vertical text.
+**Ollama setup**: `ollama pull glm-ocr && ollama pull qwen3.5:9b && ollama serve`. Requires GPU (tested on RTX 3090, 24GB VRAM). GLM-OCR works well on printed menus, less accurate on handwritten/vertical text.
 
 **Types**: Prices stored as integers (cents). Nullable fields use `pgtype` types.

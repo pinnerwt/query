@@ -205,6 +205,24 @@ func (q *Queries) CreateMenuItem(ctx context.Context, arg CreateMenuItemParams) 
 	return i, err
 }
 
+const deleteMenuCategoriesByRestaurant = `-- name: DeleteMenuCategoriesByRestaurant :exec
+DELETE FROM menu_categories WHERE restaurant_id = $1
+`
+
+func (q *Queries) DeleteMenuCategoriesByRestaurant(ctx context.Context, restaurantID int64) error {
+	_, err := q.db.Exec(ctx, deleteMenuCategoriesByRestaurant, restaurantID)
+	return err
+}
+
+const deleteMenuItemsByRestaurant = `-- name: DeleteMenuItemsByRestaurant :exec
+DELETE FROM menu_items WHERE restaurant_id = $1
+`
+
+func (q *Queries) DeleteMenuItemsByRestaurant(ctx context.Context, restaurantID int64) error {
+	_, err := q.db.Exec(ctx, deleteMenuItemsByRestaurant, restaurantID)
+	return err
+}
+
 const listAddOnsByRestaurant = `-- name: ListAddOnsByRestaurant :many
 SELECT id, restaurant_id, name, price, created_at FROM add_ons WHERE restaurant_id = $1 ORDER BY name
 `
