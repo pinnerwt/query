@@ -36,8 +36,12 @@ Output ONLY valid JSON with this exact schema, no other text:
 }
 
 Rules:
+- Use Chinese (Traditional) for all item names and category names. If the menu has both Chinese and English/Japanese names for the same item, use the Chinese name only.
+- Ignore items that only appear in English, Japanese, or Korean without a Chinese equivalent.
 - price is in TWD (New Taiwan Dollars), as an integer (no decimals)
-- If an item has no price, set price to 0
+- ONLY include items where you are confident the price matches the item. If a price seems misaligned or uncertain, skip that item rather than guess wrong.
+- The OCR text comes from multiple photos of the same menu. Cross-reference across photos: if the same item appears with different prices, use the most common price.
+- If an item has no price at all, set price to 0
 - If there are no clear categories, use "其他" as the category name
 - Merge duplicate items (same name) keeping the first occurrence
 - description is optional, omit or set to "" if none

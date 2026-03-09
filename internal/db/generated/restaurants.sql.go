@@ -75,6 +75,48 @@ func (q *Queries) GetRestaurantDetailsByPlaceID(ctx context.Context, placeID int
 	return i, err
 }
 
+const listRestaurantsWithMenus = `-- name: ListRestaurantsWithMenus :many
+SELECT p.id AS place_id, p.google_place_id, p.name, p.address, rd.id AS restaurant_id
+FROM places p
+JOIN restaurant_details rd ON rd.place_id = p.id
+WHERE EXISTS (SELECT 1 FROM menu_items mi WHERE mi.restaurant_id = rd.id)
+ORDER BY p.name
+`
+
+type ListRestaurantsWithMenusRow struct {
+	PlaceID       int64
+	GooglePlaceID string
+	Name          string
+	Address       pgtype.Text
+	RestaurantID  int64
+}
+
+func (q *Queries) ListRestaurantsWithMenus(ctx context.Context) ([]ListRestaurantsWithMenusRow, error) {
+	rows, err := q.db.Query(ctx, listRestaurantsWithMenus)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRestaurantsWithMenusRow
+	for rows.Next() {
+		var i ListRestaurantsWithMenusRow
+		if err := rows.Scan(
+			&i.PlaceID,
+			&i.GooglePlaceID,
+			&i.Name,
+			&i.Address,
+			&i.RestaurantID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const upsertRestaurantDetails = `-- name: UpsertRestaurantDetails :one
 INSERT INTO restaurant_details (place_id)
 VALUES ($1)
