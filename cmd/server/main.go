@@ -225,7 +225,7 @@ async function showMenu(rid, name) {
     menuEl.innerHTML = '<div class="empty">此餐廳尚無菜單</div>';
     return;
   }
-  menuEl.innerHTML = data.map(cat =>
+  menuEl.innerHTML = data.filter(cat => cat.items && cat.items.length > 0).map(cat =>
     '<div class="category">' +
     '<div class="category-header">' + esc(cat.name) + '</div>' +
     cat.items.map(it =>
