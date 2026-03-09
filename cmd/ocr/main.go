@@ -495,7 +495,7 @@ func normalizeMenu(baseURL, model, rawText string, useOpenAI bool) (*menuData, e
 	if useOpenAI {
 		result, err = openaiChat(baseURL, model, prompt)
 	} else {
-		result, err = ollamaChat(baseURL, model, prompt, nil, "json")
+		result, err = ollamaChat(baseURL, model, prompt, nil, "")
 	}
 	if err != nil {
 		return nil, err
