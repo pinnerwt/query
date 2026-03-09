@@ -29,7 +29,32 @@ Output ONLY valid JSON with this exact schema, no other text:
     {
       "name": "category name",
       "items": [
-        {"name": "item name", "price": 100, "description": "optional description"}
+        {
+          "name": "item name",
+          "price": 100,
+          "description": "optional description",
+          "price_tiers": [
+            {"label": "2入", "quantity": 2, "price": 688},
+            {"label": "6入", "quantity": 6, "price": 1680}
+          ]
+        }
+      ]
+    }
+  ],
+  "combos": [
+    {
+      "name": "combo name",
+      "price": 198,
+      "description": "what is included",
+      "groups": [
+        {
+          "name": "group name",
+          "min_choices": 1,
+          "max_choices": 1,
+          "options": [
+            {"name": "option name", "price_adjustment": 0}
+          ]
+        }
       ]
     }
   ]
@@ -47,6 +72,11 @@ Rules:
 - Merge duplicate items (same name) keeping the first occurrence
 - description is optional, omit or set to "" if none
 - Do NOT include any text outside the JSON object
+- If an item has multiple prices for different quantities (e.g. "Two/NT$688, Six/NT$1,680"), use price_tiers array. Set item price to the lowest tier price.
+- If an item has only one price, omit price_tiers (do NOT create a single-entry price_tiers array).
+- If the menu has set meals/combos with chooseable options (e.g. "choose a soup", "pick a main"), add them to the combos array with groups and options.
+- combos is optional — omit if no set meals are detected.
+- price_adjustment in combo options is the extra cost on top of the combo base price (0 if no upcharge).
 
 Raw OCR text:
 `
@@ -71,6 +101,7 @@ type ollamaResponse struct {
 
 type menuData struct {
 	Categories []menuCategory `json:"categories"`
+	Combos     []menuCombo    `json:"combos,omitempty"`
 }
 
 type menuCategory struct {
@@ -79,9 +110,35 @@ type menuCategory struct {
 }
 
 type menuItem struct {
-	Name        string `json:"name"`
-	Price       int    `json:"price"`
-	Description string `json:"description,omitempty"`
+	Name        string      `json:"name"`
+	Price       int         `json:"price"`
+	Description string      `json:"description,omitempty"`
+	PriceTiers  []priceTier `json:"price_tiers,omitempty"`
+}
+
+type priceTier struct {
+	Label    string `json:"label"`
+	Quantity int    `json:"quantity"`
+	Price    int    `json:"price"`
+}
+
+type menuCombo struct {
+	Name        string       `json:"name"`
+	Price       int          `json:"price"`
+	Description string       `json:"description,omitempty"`
+	Groups      []comboGroup `json:"groups,omitempty"`
+}
+
+type comboGroup struct {
+	Name       string        `json:"name"`
+	MinChoices int           `json:"min_choices"`
+	MaxChoices int           `json:"max_choices"`
+	Options    []comboOption `json:"options"`
+}
+
+type comboOption struct {
+	Name            string `json:"name"`
+	PriceAdjustment int    `json:"price_adjustment"`
 }
 
 func main() {
@@ -151,10 +208,36 @@ func main() {
 	for _, cat := range menu.Categories {
 		fmt.Printf("\n[%s]\n", cat.Name)
 		for _, item := range cat.Items {
-			fmt.Printf("  %s — %d元\n", item.Name, item.Price)
+			if len(item.PriceTiers) > 0 {
+				tierStrs := make([]string, len(item.PriceTiers))
+				for i, t := range item.PriceTiers {
+					tierStrs[i] = fmt.Sprintf("%s:%d元", t.Label, t.Price)
+				}
+				fmt.Printf("  %s — %s\n", item.Name, strings.Join(tierStrs, " / "))
+			} else {
+				fmt.Printf("  %s — %d元\n", item.Name, item.Price)
+			}
 			totalItems++
 		}
 	}
+
+	if len(menu.Combos) > 0 {
+		fmt.Printf("\n=== Combos ===\n")
+		for _, combo := range menu.Combos {
+			fmt.Printf("\n[%s] %d元 — %s\n", combo.Name, combo.Price, combo.Description)
+			for _, g := range combo.Groups {
+				fmt.Printf("  %s (choose %d-%d):\n", g.Name, g.MinChoices, g.MaxChoices)
+				for _, o := range g.Options {
+					adj := ""
+					if o.PriceAdjustment != 0 {
+						adj = fmt.Sprintf(" (+%d)", o.PriceAdjustment)
+					}
+					fmt.Printf("    - %s%s\n", o.Name, adj)
+				}
+			}
+		}
+	}
+
 	fmt.Printf("\nTotal: %d categories, %d items\n", len(menu.Categories), totalItems)
 
 	if *dryRun {
