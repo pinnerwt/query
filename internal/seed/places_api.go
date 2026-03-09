@@ -14,9 +14,10 @@ const defaultBaseURL = "https://places.googleapis.com/v1"
 
 // PlacesClient calls the Google Places API (New).
 type PlacesClient struct {
-	apiKey  string
-	baseURL string
-	http    *http.Client
+	apiKey   string
+	baseURL  string
+	language string
+	http     *http.Client
 }
 
 type PlacesClientOption func(*PlacesClient)
@@ -41,6 +42,7 @@ func NewPlacesClient(apiKey string, opts ...PlacesClientOption) *PlacesClient {
 type SearchNearbyRequest struct {
 	IncludedTypes       []string            `json:"includedTypes"`
 	MaxResultCount      int                 `json:"maxResultCount"`
+	LanguageCode        string              `json:"languageCode,omitempty"`
 	LocationRestriction LocationRestriction `json:"locationRestriction"`
 }
 
@@ -124,10 +126,16 @@ func (c *PlacesClient) SearchNearbyAdvanced(ctx context.Context, lat, lng, radiu
 			"places.websiteUri,places.nationalPhoneNumber,places.googleMapsUri,places.photos")
 }
 
+// SetLanguage sets the language code for all subsequent API requests.
+func (c *PlacesClient) SetLanguage(lang string) {
+	c.language = lang
+}
+
 func (c *PlacesClient) searchNearby(ctx context.Context, lat, lng, radius float64, placeType, fieldMask string) ([]PlaceResult, error) {
 	reqBody := SearchNearbyRequest{
 		IncludedTypes:  []string{placeType},
 		MaxResultCount: 20,
+		LanguageCode:   c.language,
 		LocationRestriction: LocationRestriction{
 			Circle: CircleRestriction{
 				Center: LatLng{Latitude: lat, Longitude: lng},

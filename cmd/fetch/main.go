@@ -17,6 +17,7 @@ import (
 func main() {
 	apiKey := flag.String("api-key", "", "Google API key (or set GOOGLE_API_KEY env var)")
 	dbURL := flag.String("db", "", "PostgreSQL connection string (or set DATABASE_URL env var)")
+	lang := flag.String("lang", "zh-TW", "Language code for API results")
 	flag.Parse()
 
 	key := *apiKey
@@ -45,6 +46,7 @@ func main() {
 
 	q := db.New(conn)
 	client := seed.NewPlacesClient(key)
+	client.SetLanguage(*lang)
 
 	// Load all discovery queries
 	queries, err := q.ListDiscoveryQueries(ctx)

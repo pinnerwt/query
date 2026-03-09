@@ -202,6 +202,48 @@ func (q *Queries) InsertPlacePhoto(ctx context.Context, arg InsertPlacePhotoPara
 	return err
 }
 
+const listAllPlaces = `-- name: ListAllPlaces :many
+SELECT id, google_place_id, name, address, latitude, longitude, plus_code, phone_number, website, google_maps_url, rating, total_ratings, price_level, place_types, reservation_url, created_at, updated_at FROM places ORDER BY name
+`
+
+func (q *Queries) ListAllPlaces(ctx context.Context) ([]Place, error) {
+	rows, err := q.db.Query(ctx, listAllPlaces)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Place
+	for rows.Next() {
+		var i Place
+		if err := rows.Scan(
+			&i.ID,
+			&i.GooglePlaceID,
+			&i.Name,
+			&i.Address,
+			&i.Latitude,
+			&i.Longitude,
+			&i.PlusCode,
+			&i.PhoneNumber,
+			&i.Website,
+			&i.GoogleMapsUrl,
+			&i.Rating,
+			&i.TotalRatings,
+			&i.PriceLevel,
+			&i.PlaceTypes,
+			&i.ReservationUrl,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPlacesByType = `-- name: ListPlacesByType :many
 SELECT id, google_place_id, name, address, latitude, longitude, plus_code, phone_number, website, google_maps_url, rating, total_ratings, price_level, place_types, reservation_url, created_at, updated_at FROM places WHERE $1::text = ANY(place_types) ORDER BY name
 `

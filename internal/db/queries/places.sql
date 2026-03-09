@@ -9,6 +9,9 @@ INSERT INTO places (
     @rating, @total_ratings, @price_level, @place_types, @reservation_url
 ) RETURNING *;
 
+-- name: ListAllPlaces :many
+SELECT * FROM places ORDER BY name;
+
 -- name: GetPlace :one
 SELECT * FROM places WHERE id = $1;
 
