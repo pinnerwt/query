@@ -78,6 +78,16 @@ type MenuItem struct {
 	UpdatedAt    pgtype.Timestamptz
 }
 
+type MenuItemPriceTier struct {
+	ID         int64
+	MenuItemID int64
+	Label      string
+	Quantity   int32
+	Price      int32
+	SortOrder  int32
+	CreatedAt  pgtype.Timestamptz
+}
+
 type Place struct {
 	ID             int64
 	GooglePlaceID  string

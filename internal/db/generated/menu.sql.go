@@ -205,6 +205,50 @@ func (q *Queries) CreateMenuItem(ctx context.Context, arg CreateMenuItemParams) 
 	return i, err
 }
 
+const createPriceTier = `-- name: CreatePriceTier :one
+INSERT INTO menu_item_price_tiers (menu_item_id, label, quantity, price, sort_order)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, menu_item_id, label, quantity, price, sort_order, created_at
+`
+
+type CreatePriceTierParams struct {
+	MenuItemID int64
+	Label      string
+	Quantity   int32
+	Price      int32
+	SortOrder  int32
+}
+
+func (q *Queries) CreatePriceTier(ctx context.Context, arg CreatePriceTierParams) (MenuItemPriceTier, error) {
+	row := q.db.QueryRow(ctx, createPriceTier,
+		arg.MenuItemID,
+		arg.Label,
+		arg.Quantity,
+		arg.Price,
+		arg.SortOrder,
+	)
+	var i MenuItemPriceTier
+	err := row.Scan(
+		&i.ID,
+		&i.MenuItemID,
+		&i.Label,
+		&i.Quantity,
+		&i.Price,
+		&i.SortOrder,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const deleteComboMealsByRestaurant = `-- name: DeleteComboMealsByRestaurant :exec
+DELETE FROM combo_meals WHERE restaurant_id = $1
+`
+
+func (q *Queries) DeleteComboMealsByRestaurant(ctx context.Context, restaurantID int64) error {
+	_, err := q.db.Exec(ctx, deleteComboMealsByRestaurant, restaurantID)
+	return err
+}
+
 const deleteMenuCategoriesByRestaurant = `-- name: DeleteMenuCategoriesByRestaurant :exec
 DELETE FROM menu_categories WHERE restaurant_id = $1
 `
@@ -220,6 +264,15 @@ DELETE FROM menu_items WHERE restaurant_id = $1
 
 func (q *Queries) DeleteMenuItemsByRestaurant(ctx context.Context, restaurantID int64) error {
 	_, err := q.db.Exec(ctx, deleteMenuItemsByRestaurant, restaurantID)
+	return err
+}
+
+const deletePriceTiersByMenuItem = `-- name: DeletePriceTiersByMenuItem :exec
+DELETE FROM menu_item_price_tiers WHERE menu_item_id = $1
+`
+
+func (q *Queries) DeletePriceTiersByMenuItem(ctx context.Context, menuItemID int64) error {
+	_, err := q.db.Exec(ctx, deletePriceTiersByMenuItem, menuItemID)
 	return err
 }
 
@@ -242,6 +295,103 @@ func (q *Queries) ListAddOnsByRestaurant(ctx context.Context, restaurantID int64
 			&i.Name,
 			&i.Price,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listComboMealGroupOptionsByGroup = `-- name: ListComboMealGroupOptionsByGroup :many
+SELECT id, group_id, menu_item_id, item_name, price_adjustment, sort_order, created_at FROM combo_meal_group_options WHERE group_id = $1 ORDER BY sort_order
+`
+
+func (q *Queries) ListComboMealGroupOptionsByGroup(ctx context.Context, groupID int64) ([]ComboMealGroupOption, error) {
+	rows, err := q.db.Query(ctx, listComboMealGroupOptionsByGroup, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ComboMealGroupOption
+	for rows.Next() {
+		var i ComboMealGroupOption
+		if err := rows.Scan(
+			&i.ID,
+			&i.GroupID,
+			&i.MenuItemID,
+			&i.ItemName,
+			&i.PriceAdjustment,
+			&i.SortOrder,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listComboMealGroupsByComboMeal = `-- name: ListComboMealGroupsByComboMeal :many
+SELECT id, combo_meal_id, name, min_choices, max_choices, sort_order, created_at FROM combo_meal_groups WHERE combo_meal_id = $1 ORDER BY sort_order
+`
+
+func (q *Queries) ListComboMealGroupsByComboMeal(ctx context.Context, comboMealID int64) ([]ComboMealGroup, error) {
+	rows, err := q.db.Query(ctx, listComboMealGroupsByComboMeal, comboMealID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ComboMealGroup
+	for rows.Next() {
+		var i ComboMealGroup
+		if err := rows.Scan(
+			&i.ID,
+			&i.ComboMealID,
+			&i.Name,
+			&i.MinChoices,
+			&i.MaxChoices,
+			&i.SortOrder,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listComboMealsByRestaurant = `-- name: ListComboMealsByRestaurant :many
+SELECT id, restaurant_id, name, description, price, is_available, created_at, updated_at FROM combo_meals WHERE restaurant_id = $1 ORDER BY name
+`
+
+func (q *Queries) ListComboMealsByRestaurant(ctx context.Context, restaurantID int64) ([]ComboMeal, error) {
+	rows, err := q.db.Query(ctx, listComboMealsByRestaurant, restaurantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ComboMeal
+	for rows.Next() {
+		var i ComboMeal
+		if err := rows.Scan(
+			&i.ID,
+			&i.RestaurantID,
+			&i.Name,
+			&i.Description,
+			&i.Price,
+			&i.IsAvailable,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -307,6 +457,73 @@ func (q *Queries) ListMenuItemsByRestaurant(ctx context.Context, restaurantID in
 			&i.PhotoUrl,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPriceTiersByMenuItem = `-- name: ListPriceTiersByMenuItem :many
+SELECT id, menu_item_id, label, quantity, price, sort_order, created_at FROM menu_item_price_tiers WHERE menu_item_id = $1 ORDER BY sort_order
+`
+
+func (q *Queries) ListPriceTiersByMenuItem(ctx context.Context, menuItemID int64) ([]MenuItemPriceTier, error) {
+	rows, err := q.db.Query(ctx, listPriceTiersByMenuItem, menuItemID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MenuItemPriceTier
+	for rows.Next() {
+		var i MenuItemPriceTier
+		if err := rows.Scan(
+			&i.ID,
+			&i.MenuItemID,
+			&i.Label,
+			&i.Quantity,
+			&i.Price,
+			&i.SortOrder,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPriceTiersByRestaurant = `-- name: ListPriceTiersByRestaurant :many
+SELECT pt.id, pt.menu_item_id, pt.label, pt.quantity, pt.price, pt.sort_order, pt.created_at FROM menu_item_price_tiers pt
+JOIN menu_items mi ON mi.id = pt.menu_item_id
+WHERE mi.restaurant_id = $1
+ORDER BY pt.menu_item_id, pt.sort_order
+`
+
+func (q *Queries) ListPriceTiersByRestaurant(ctx context.Context, restaurantID int64) ([]MenuItemPriceTier, error) {
+	rows, err := q.db.Query(ctx, listPriceTiersByRestaurant, restaurantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MenuItemPriceTier
+	for rows.Next() {
+		var i MenuItemPriceTier
+		if err := rows.Scan(
+			&i.ID,
+			&i.MenuItemID,
+			&i.Label,
+			&i.Quantity,
+			&i.Price,
+			&i.SortOrder,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
