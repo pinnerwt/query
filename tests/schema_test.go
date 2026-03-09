@@ -507,6 +507,44 @@ func TestComboMealGroupOptions(t *testing.T) {
 	assert.Nil(t, refID)
 }
 
+func TestPriceTiers(t *testing.T) {
+	conn := dbtest.SetupTestDB(t)
+	ctx := context.Background()
+
+	placeID := insertPlace(t, conn, ctx, "tier_test", "Tier Test Place")
+	restID := insertRestaurantDetails(t, conn, ctx, placeID)
+
+	// Create a menu item
+	var itemID int64
+	err := conn.QueryRow(ctx, `
+		INSERT INTO menu_items (restaurant_id, name, price)
+		VALUES ($1, '法國生蠔', 688)
+		RETURNING id
+	`, restID).Scan(&itemID)
+	require.NoError(t, err)
+
+	// Insert price tiers
+	_, err = conn.Exec(ctx, `
+		INSERT INTO menu_item_price_tiers (menu_item_id, label, quantity, price, sort_order)
+		VALUES ($1, '2入', 2, 688, 0), ($1, '6入', 6, 1680, 1), ($1, '12入', 12, 3280, 2)
+	`, itemID)
+	require.NoError(t, err)
+
+	// Verify tiers
+	var count int
+	err = conn.QueryRow(ctx, `SELECT COUNT(*) FROM menu_item_price_tiers WHERE menu_item_id = $1`, itemID).Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 3, count)
+
+	// Verify cascade delete
+	_, err = conn.Exec(ctx, `DELETE FROM menu_items WHERE id = $1`, itemID)
+	require.NoError(t, err)
+
+	err = conn.QueryRow(ctx, `SELECT COUNT(*) FROM menu_item_price_tiers WHERE menu_item_id = $1`, itemID).Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+}
+
 func TestAddOns(t *testing.T) {
 	conn := dbtest.SetupTestDB(t)
 	ctx := context.Background()
