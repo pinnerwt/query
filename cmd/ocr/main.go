@@ -369,6 +369,7 @@ func insertMenu(ctx context.Context, q *db.Queries, googlePlaceID string, menu *
 	// Clear existing menu data (idempotent)
 	_ = q.DeleteMenuItemsByRestaurant(ctx, restaurant.ID)
 	_ = q.DeleteMenuCategoriesByRestaurant(ctx, restaurant.ID)
+	_ = q.DeleteComboMealsByRestaurant(ctx, restaurant.ID)
 
 	// Insert categories and items
 	for i, cat := range menu.Categories {
@@ -382,7 +383,7 @@ func insertMenu(ctx context.Context, q *db.Queries, googlePlaceID string, menu *
 		}
 
 		for _, item := range cat.Items {
-			_, err := q.CreateMenuItem(ctx, db.CreateMenuItemParams{
+			mi, err := q.CreateMenuItem(ctx, db.CreateMenuItemParams{
 				RestaurantID: restaurant.ID,
 				CategoryID:   pgtype.Int8{Int64: category.ID, Valid: true},
 				Name:         item.Name,
@@ -392,6 +393,58 @@ func insertMenu(ctx context.Context, q *db.Queries, googlePlaceID string, menu *
 			})
 			if err != nil {
 				return fmt.Errorf("create item %q: %w", item.Name, err)
+			}
+
+			for j, tier := range item.PriceTiers {
+				_, err := q.CreatePriceTier(ctx, db.CreatePriceTierParams{
+					MenuItemID: mi.ID,
+					Label:      tier.Label,
+					Quantity:   int32(tier.Quantity),
+					Price:      int32(tier.Price),
+					SortOrder:  int32(j),
+				})
+				if err != nil {
+					return fmt.Errorf("create price tier %q for item %q: %w", tier.Label, item.Name, err)
+				}
+			}
+		}
+	}
+
+	// Insert combo meals
+	for _, combo := range menu.Combos {
+		cm, err := q.CreateComboMeal(ctx, db.CreateComboMealParams{
+			RestaurantID: restaurant.ID,
+			Name:         combo.Name,
+			Description:  pgtype.Text{String: combo.Description, Valid: combo.Description != ""},
+			Price:        int32(combo.Price),
+		})
+		if err != nil {
+			return fmt.Errorf("create combo %q: %w", combo.Name, err)
+		}
+
+		for gi, group := range combo.Groups {
+			cg, err := q.CreateComboMealGroup(ctx, db.CreateComboMealGroupParams{
+				ComboMealID: cm.ID,
+				Name:        group.Name,
+				MinChoices:  int32(group.MinChoices),
+				MaxChoices:  int32(group.MaxChoices),
+				SortOrder:   int32(gi),
+			})
+			if err != nil {
+				return fmt.Errorf("create combo group %q: %w", group.Name, err)
+			}
+
+			for oi, opt := range group.Options {
+				_, err := q.CreateComboMealGroupOption(ctx, db.CreateComboMealGroupOptionParams{
+					GroupID:         cg.ID,
+					MenuItemID:      pgtype.Int8{},
+					ItemName:        pgtype.Text{String: opt.Name, Valid: opt.Name != ""},
+					PriceAdjustment: int32(opt.PriceAdjustment),
+					SortOrder:       int32(oi),
+				})
+				if err != nil {
+					return fmt.Errorf("create combo option %q: %w", opt.Name, err)
+				}
 			}
 		}
 	}
