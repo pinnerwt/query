@@ -106,12 +106,11 @@ func (s *server) handleMenu(w http.ResponseWriter, r *http.Request) {
 		Items []menuItem `json:"items"`
 	}
 
-	catMap := make(map[int64]*category)
+	catIdx := make(map[int64]int)
 	var out []category
 	for _, c := range categories {
-		cat := category{Name: c.Name}
-		out = append(out, cat)
-		catMap[c.ID] = &out[len(out)-1]
+		catIdx[c.ID] = len(out)
+		out = append(out, category{Name: c.Name})
 	}
 
 	for _, it := range items {
@@ -121,8 +120,8 @@ func (s *server) handleMenu(w http.ResponseWriter, r *http.Request) {
 			Description: it.Description.String,
 		}
 		if it.CategoryID.Valid {
-			if cat, ok := catMap[it.CategoryID.Int64]; ok {
-				cat.Items = append(cat.Items, mi)
+			if idx, ok := catIdx[it.CategoryID.Int64]; ok {
+				out[idx].Items = append(out[idx].Items, mi)
 				continue
 			}
 		}
