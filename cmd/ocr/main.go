@@ -156,7 +156,7 @@ func main() {
 	normalizeURL := flag.String("normalize-url", "", "OpenAI-compatible API base URL for normalization (if different from --ollama)")
 	ocrTimeout := flag.Duration("ocr-timeout", 30*time.Second, "Timeout per OCR image (skip image on timeout)")
 	ocrWorkers := flag.Int("ocr-workers", 1, "OCR concurrency (1 = sequential, safer; >1 = parallel)")
-	normWorkers := flag.Int("norm-workers", 1, "Normalization concurrency: 1 = one combined call (default), N>1 = per-photo with N parallel workers")
+	normWorkers := flag.Int("norm-workers", 0, "Normalization mode: 0 = combined (default), N>0 = per-photo with N parallel workers")
 	maxPhotos := flag.Int("max-photos", 0, "Max photos to OCR (0 = all)")
 	maxDim := flag.Int("max-dim", 800, "Resize images so longest side is at most this many pixels (0 = no resize)")
 	dedup := flag.Bool("dedup", true, "Skip near-duplicate photos using perceptual hashing")
@@ -257,7 +257,7 @@ func main() {
 	normStart := time.Now()
 	var menu *menuData
 
-	if *normWorkers <= 1 {
+	if *normWorkers <= 0 {
 		// Combined mode: concatenate all texts, one normalization call
 		fmt.Println("=== Normalizing combined text ===")
 		combined := allOCRText.String()

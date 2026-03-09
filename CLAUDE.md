@@ -74,7 +74,7 @@ Go 1.25.0 project — a restaurant/place database backed by PostgreSQL.
 - `cmd/seed/` — CLI for Step 1 discovery: grid sweep with Google Places API, stores to staging tables
 - `cmd/fetch/` — CLI for Step 2 detail fetch: replays discovery queries with advanced fields, promotes to `places`/`place_opening_hours`
 - `cmd/scrape/` — CLI for scraping menu photos from Google Maps using headless Chrome (chromedp). Supports `--proxy` for SOCKS5/HTTP proxies. Forces `hl=zh-TW` so Chinese selectors work regardless of proxy region.
-- `cmd/ocr/` — CLI for menu extraction with two-pass pipeline: GLM-OCR (Ollama, GPU) for raw text, Qwen3.5 27B (llama.cpp at :8090) for structured normalization. Includes perceptual dedup to skip near-duplicate photos and image resizing (default 800px max). Writes to `menu_categories`/`menu_items`/`menu_item_price_tiers`/`combo_meals` tables. Takes a Google Place ID, reads photos from `menu_photos/<place_id>/`.
+- `cmd/ocr/` — CLI for menu extraction with two-pass pipeline: GLM-OCR (Ollama, GPU) for raw text, then per-photo normalization via Qwen3.5 (Ollama) into structured JSON, followed by merge/dedup across photos. Includes perceptual dedup to skip near-duplicate photos and image resizing (default 800px max). Writes to `menu_categories`/`menu_items`/`menu_item_price_tiers`/`combo_meals` tables. Takes a Google Place ID, reads photos from `menu_photos/<place_id>/`.
 - `internal/seed/` — Google Places API client, grid sweep logic, geo helpers
 
 **sqlc config** (`sqlc.yaml`): Uses `pgx/v5` as the SQL package. Queries dir is `internal/db/queries`, schema dir is `migrations`, output goes to `internal/db/generated`.
@@ -87,7 +87,7 @@ Go 1.25.0 project — a restaurant/place database backed by PostgreSQL.
 1. `cmd/seed` — Discover places via free Google API calls, store in staging tables. Always use `--lang zh-TW` for Chinese names/addresses.
 2. `cmd/fetch` — Replay discovery queries with advanced field masks (~$0.035/query), promote to `places`/`place_opening_hours`. Always use `--lang zh-TW`.
 3. `cmd/scrape` — Scrape menu photos from Google Maps "菜單" tab via headless Chrome
-4. `cmd/ocr` — Two-pass menu extraction: GLM-OCR (Ollama GPU) reads photo text, Qwen3.5 27B (llama.cpp) normalizes into structured JSON with price tiers and combos, then inserts into `restaurant_details`/`menu_categories`/`menu_items`/`menu_item_price_tiers`/`combo_meals`
+4. `cmd/ocr` — Two-pass menu extraction: GLM-OCR (Ollama GPU) reads photo text, then each photo is independently normalized into structured JSON by Qwen3.5 (Ollama), results are merged/deduped across photos, then inserted into `restaurant_details`/`menu_categories`/`menu_items`/`menu_item_price_tiers`/`combo_meals`
 
 **Model setup** (RTX 3090, 24GB VRAM):
 - Ollama: `ollama pull glm-ocr` then create `glm-ocr-gpu` variant with `num_ctx 8192` for GPU loading. Run `ollama serve`.
