@@ -85,22 +85,48 @@ func (s *server) handleMenu(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	categories, err := s.q.ListMenuCategoriesByRestaurant(r.Context(), rid)
+	ctx := r.Context()
+
+	categories, err := s.q.ListMenuCategoriesByRestaurant(ctx, rid)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
 
-	items, err := s.q.ListMenuItemsByRestaurant(r.Context(), rid)
+	items, err := s.q.ListMenuItemsByRestaurant(ctx, rid)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
+	}
+
+	// Fetch all price tiers for this restaurant and build a map by menu_item_id.
+	priceTiers, err := s.q.ListPriceTiersByRestaurant(ctx, rid)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	type priceTierOut struct {
+		Label    string `json:"label"`
+		Quantity int32  `json:"quantity"`
+		Price    int32  `json:"price"`
+	}
+
+	tierMap := make(map[int64][]priceTierOut)
+	for _, pt := range priceTiers {
+		tierMap[pt.MenuItemID] = append(tierMap[pt.MenuItemID], priceTierOut{
+			Label:    pt.Label,
+			Quantity: pt.Quantity,
+			Price:    pt.Price,
+		})
 	}
 
 	type menuItem struct {
-		Name        string `json:"name"`
-		Price       int32  `json:"price"`
-		Description string `json:"description,omitempty"`
+		ID          int64          `json:"id"`
+		Name        string         `json:"name"`
+		Price       int32          `json:"price"`
+		Description string         `json:"description,omitempty"`
+		PriceTiers  []priceTierOut `json:"price_tiers,omitempty"`
 	}
 
 	type category struct {
@@ -109,33 +135,112 @@ func (s *server) handleMenu(w http.ResponseWriter, r *http.Request) {
 	}
 
 	catIdx := make(map[int64]int)
-	var out []category
+	var cats []category
 	for _, c := range categories {
-		catIdx[c.ID] = len(out)
-		out = append(out, category{Name: c.Name})
+		catIdx[c.ID] = len(cats)
+		cats = append(cats, category{Name: c.Name})
 	}
 
 	for _, it := range items {
 		mi := menuItem{
+			ID:          it.ID,
 			Name:        it.Name,
 			Price:       it.Price,
 			Description: it.Description.String,
+			PriceTiers:  tierMap[it.ID],
 		}
 		if it.CategoryID.Valid {
 			if idx, ok := catIdx[it.CategoryID.Int64]; ok {
-				out[idx].Items = append(out[idx].Items, mi)
+				cats[idx].Items = append(cats[idx].Items, mi)
 				continue
 			}
 		}
 		// Uncategorized
-		if len(out) == 0 || out[len(out)-1].Name != "其他" {
-			out = append(out, category{Name: "其他"})
+		if len(cats) == 0 || cats[len(cats)-1].Name != "其他" {
+			cats = append(cats, category{Name: "其他"})
 		}
-		out[len(out)-1].Items = append(out[len(out)-1].Items, mi)
+		cats[len(cats)-1].Items = append(cats[len(cats)-1].Items, mi)
+	}
+
+	// Fetch combos for this restaurant.
+	comboMeals, err := s.q.ListComboMealsByRestaurant(ctx, rid)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	type comboOption struct {
+		Name       string `json:"name"`
+		Adjustment int32  `json:"adjustment"`
+	}
+
+	type comboGroup struct {
+		Name    string        `json:"name"`
+		Min     int32         `json:"min"`
+		Max     int32         `json:"max"`
+		Options []comboOption `json:"options"`
+	}
+
+	type comboOut struct {
+		ID          int64        `json:"id"`
+		Name        string       `json:"name"`
+		Price       int32        `json:"price"`
+		Description string       `json:"description,omitempty"`
+		Groups      []comboGroup `json:"groups"`
+	}
+
+	var combos []comboOut
+	for _, cm := range comboMeals {
+		groups, err := s.q.ListComboMealGroupsByComboMeal(ctx, cm.ID)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+
+		var grpOut []comboGroup
+		for _, g := range groups {
+			options, err := s.q.ListComboMealGroupOptionsByGroup(ctx, g.ID)
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+
+			var opts []comboOption
+			for _, o := range options {
+				name := o.ItemName.String
+				opts = append(opts, comboOption{
+					Name:       name,
+					Adjustment: o.PriceAdjustment,
+				})
+			}
+
+			grpOut = append(grpOut, comboGroup{
+				Name:    g.Name,
+				Min:     g.MinChoices,
+				Max:     g.MaxChoices,
+				Options: opts,
+			})
+		}
+
+		combos = append(combos, comboOut{
+			ID:          cm.ID,
+			Name:        cm.Name,
+			Price:       cm.Price,
+			Description: cm.Description.String,
+			Groups:      grpOut,
+		})
+	}
+
+	type menuResponse struct {
+		Categories []category `json:"categories"`
+		Combos     []comboOut `json:"combos"`
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(out)
+	json.NewEncoder(w).Encode(menuResponse{
+		Categories: cats,
+		Combos:     combos,
+	})
 }
 
 func (s *server) handlePlaces(w http.ResponseWriter, r *http.Request) {
@@ -303,11 +408,13 @@ async function showMenu(rid, name) {
 
   const res = await fetch('/api/menu?restaurant_id=' + rid);
   const data = await res.json();
-  if (!data || data.length === 0) {
+  const cats = data.categories || [];
+  const combos = data.combos || [];
+  if (cats.length === 0 && combos.length === 0) {
     menuEl.innerHTML = '<div class="empty">此餐廳尚無菜單</div>';
     return;
   }
-  menuEl.innerHTML = data.filter(cat => cat.items && cat.items.length > 0).map(cat =>
+  let html = cats.filter(cat => cat.items && cat.items.length > 0).map(cat =>
     '<div class="category">' +
     '<div class="category-header">' + esc(cat.name) + '</div>' +
     cat.items.map(it =>
@@ -315,12 +422,26 @@ async function showMenu(rid, name) {
       '<div class="item-info">' +
       '<div class="item-name">' + esc(it.name) + '</div>' +
       (it.description ? '<div class="item-desc">' + esc(it.description) + '</div>' : '') +
+      (it.price_tiers && it.price_tiers.length > 0 ? '<div class="item-desc">' + it.price_tiers.map(t => esc(t.label) + ' NT$' + t.price).join(' / ') + '</div>' : '') +
       '</div>' +
       (it.price > 0 ? '<div class="item-price">' + it.price + '</div>' : it.price === -2 ? '<div class="item-price unknown">時價</div>' : it.price === -1 ? '<div class="item-price unknown">未知</div>' : '') +
       '</div>'
     ).join('') +
     '</div>'
   ).join('');
+  if (combos.length > 0) {
+    html += '<div class="category"><div class="category-header">套餐</div>' +
+      combos.map(c =>
+        '<div class="menu-item">' +
+        '<div class="item-info">' +
+        '<div class="item-name">' + esc(c.name) + '</div>' +
+        (c.description ? '<div class="item-desc">' + esc(c.description) + '</div>' : '') +
+        '</div>' +
+        '<div class="item-price">' + c.price + '</div>' +
+        '</div>'
+      ).join('') + '</div>';
+  }
+  menuEl.innerHTML = html;
 }
 
 function showList() {
