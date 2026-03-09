@@ -49,11 +49,13 @@ go build -o scrape ./cmd/scrape
 ./scrape --proxy http://user:pass@host:port ChIJ...    # with authenticated proxy
 
 # Build and run the OCR CLI (Step 4: menu extraction, two-pass)
-# Requires: ollama serve with glm-ocr + qwen3.5:9b models pulled
+# Requires: ollama serve with glm-ocr-gpu model, llama.cpp server with qwen3.5:27b at :8090
 go build -o ocr ./cmd/ocr
 ./ocr --dry-run ChIJ41wbgbqrQjQR75mxQgbywys           # preview without DB write
 ./ocr --db "postgres://..." ChIJ41wbgbqrQjQR75mxQgbywys  # extract & save to DB
-./ocr --max-photos 5 --db "postgres://..." ChIJ...     # OCR more photos (default: 3)
+./ocr --max-photos 5 --db "postgres://..." ChIJ...     # limit photos (default: all)
+./ocr --model glm-ocr --normalize-model qwen3.5:9b \
+    --normalize-url "" --db "..." ChIJ...               # fallback: all-Ollama pipeline
 ```
 
 ## Architecture
@@ -72,7 +74,7 @@ Go 1.25.0 project — a restaurant/place database backed by PostgreSQL.
 - `cmd/seed/` — CLI for Step 1 discovery: grid sweep with Google Places API, stores to staging tables
 - `cmd/fetch/` — CLI for Step 2 detail fetch: replays discovery queries with advanced fields, promotes to `places`/`place_opening_hours`
 - `cmd/scrape/` — CLI for scraping menu photos from Google Maps using headless Chrome (chromedp). Supports `--proxy` for SOCKS5/HTTP proxies. Forces `hl=zh-TW` so Chinese selectors work regardless of proxy region.
-- `cmd/ocr/` — CLI for menu extraction with two-pass pipeline: GLM-OCR for raw text, Qwen3.5 9B for structured normalization. Writes to `menu_categories`/`menu_items` tables. Takes a Google Place ID, reads photos from `menu_photos/<place_id>/`.
+- `cmd/ocr/` — CLI for menu extraction with two-pass pipeline: GLM-OCR (Ollama, GPU) for raw text, Qwen3.5 27B (llama.cpp at :8090) for structured normalization. Includes perceptual dedup to skip near-duplicate photos and image resizing (default 800px max). Writes to `menu_categories`/`menu_items`/`menu_item_price_tiers`/`combo_meals` tables. Takes a Google Place ID, reads photos from `menu_photos/<place_id>/`.
 - `internal/seed/` — Google Places API client, grid sweep logic, geo helpers
 
 **sqlc config** (`sqlc.yaml`): Uses `pgx/v5` as the SQL package. Queries dir is `internal/db/queries`, schema dir is `migrations`, output goes to `internal/db/generated`.
@@ -85,8 +87,11 @@ Go 1.25.0 project — a restaurant/place database backed by PostgreSQL.
 1. `cmd/seed` — Discover places via free Google API calls, store in staging tables. Always use `--lang zh-TW` for Chinese names/addresses.
 2. `cmd/fetch` — Replay discovery queries with advanced field masks (~$0.035/query), promote to `places`/`place_opening_hours`. Always use `--lang zh-TW`.
 3. `cmd/scrape` — Scrape menu photos from Google Maps "菜單" tab via headless Chrome
-4. `cmd/ocr` — Two-pass menu extraction: GLM-OCR reads photo text, Qwen3.5 9B normalizes into structured JSON, then inserts into `restaurant_details`/`menu_categories`/`menu_items`
+4. `cmd/ocr` — Two-pass menu extraction: GLM-OCR (Ollama GPU) reads photo text, Qwen3.5 27B (llama.cpp) normalizes into structured JSON with price tiers and combos, then inserts into `restaurant_details`/`menu_categories`/`menu_items`/`menu_item_price_tiers`/`combo_meals`
 
-**Ollama setup**: `ollama pull glm-ocr && ollama pull qwen3.5:9b && ollama serve`. Requires GPU (tested on RTX 3090, 24GB VRAM). GLM-OCR works well on printed menus, less accurate on handwritten/vertical text.
+**Model setup** (RTX 3090, 24GB VRAM):
+- Ollama: `ollama pull glm-ocr` then create `glm-ocr-gpu` variant with `num_ctx 8192` for GPU loading. Run `ollama serve`.
+- llama.cpp: Run qwen3.5:27b GGUF on `http://127.0.0.1:8090` for normalization (OpenAI-compatible API).
+- GLM-OCR on GPU: ~10s/image. On CPU: ~8.5min/image (avoid).
 
 **Types**: Prices stored as integers (TWD). Special price values: `-1` = unknown (not shown on menu), `-2` = 時價 (market price). Nullable fields use `pgtype` types.

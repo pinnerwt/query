@@ -7,12 +7,19 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"image"
+	"image/jpeg"
+	_ "image/png"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"golang.org/x/image/draw"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -143,9 +150,13 @@ type comboOption struct {
 
 func main() {
 	ollamaURL := flag.String("ollama", "http://127.0.0.1:11434", "Ollama API base URL")
-	model := flag.String("model", "glm-ocr", "Model name for OCR")
+	model := flag.String("model", "glm-ocr-gpu", "Model name for OCR")
 	normalizeModel := flag.String("normalize-model", "qwen3.5:9b", "Model name for normalization (text-only)")
-	maxPhotos := flag.Int("max-photos", 3, "Max photos to OCR (reduces duplicates)")
+	normalizeURL := flag.String("normalize-url", "", "OpenAI-compatible API base URL for normalization (if different from --ollama)")
+	ocrTimeout := flag.Duration("ocr-timeout", 30*time.Second, "Timeout per OCR image (skip image on timeout)")
+	maxPhotos := flag.Int("max-photos", 0, "Max photos to OCR (0 = all)")
+	maxDim := flag.Int("max-dim", 800, "Resize images so longest side is at most this many pixels (0 = no resize)")
+	dedup := flag.Bool("dedup", true, "Skip near-duplicate photos using perceptual hashing")
 	dbURL := flag.String("db", "", "PostgreSQL connection string (or set DATABASE_URL env var)")
 	dryRun := flag.Bool("dry-run", false, "Print extracted menu without writing to database")
 	flag.Parse()
@@ -171,24 +182,38 @@ func main() {
 	}
 	fmt.Printf("Found %d menu photos for %s\n", len(files), googlePlaceID)
 
-	// Limit photos to reduce duplicate content
-	if len(files) > *maxPhotos {
+	// Deduplicate similar photos
+	if *dedup {
+		t0dedup := time.Now()
+		files = deduplicateImages(files)
+		fmt.Printf("Dedup: %d unique photos (%s)\n", len(files), time.Since(t0dedup).Round(time.Millisecond))
+	}
+
+	// Limit photos
+	if *maxPhotos > 0 && len(files) > *maxPhotos {
 		files = files[:*maxPhotos]
 	}
 
 	// Pass 1: OCR all images
+	totalStart := time.Now()
 	var allOCRText strings.Builder
+	var ocrTotal time.Duration
 	for i, f := range files {
 		fmt.Printf("[%d/%d] OCR: %s ...\n", i+1, len(files), filepath.Base(f))
-		text, err := ocrImage(*ollamaURL, *model, f)
+		t0 := time.Now()
+		text, err := ocrImage(*ollamaURL, *model, f, *maxDim, *ocrTimeout)
+		elapsed := time.Since(t0)
+		ocrTotal += elapsed
 		if err != nil {
-			log.Printf("  Warning: OCR failed: %v", err)
+			log.Printf("  Warning: OCR failed (%s): %v", elapsed.Round(time.Millisecond), err)
 			continue
 		}
+		fmt.Printf("  Done (%s, %d chars)\n", elapsed.Round(time.Millisecond), len(text))
 		allOCRText.WriteString(fmt.Sprintf("--- Photo %d ---\n", i+1))
 		allOCRText.WriteString(text)
 		allOCRText.WriteString("\n\n")
 	}
+	fmt.Printf("OCR total: %s for %d photos\n", ocrTotal.Round(time.Millisecond), len(files))
 
 	rawText := allOCRText.String()
 	if strings.TrimSpace(rawText) == "" {
@@ -198,10 +223,17 @@ func main() {
 
 	// Pass 2: Normalize into structured JSON
 	fmt.Println("=== Normalizing into structured menu ===")
-	menu, err := normalizeMenu(*ollamaURL, *normalizeModel, rawText)
-	if err != nil {
-		log.Fatalf("Normalization failed: %v", err)
+	normURL := *ollamaURL
+	if *normalizeURL != "" {
+		normURL = *normalizeURL
 	}
+	t0 := time.Now()
+	menu, err := normalizeMenu(normURL, *normalizeModel, rawText, *normalizeURL != "")
+	normElapsed := time.Since(t0)
+	if err != nil {
+		log.Fatalf("Normalization failed (%s): %v", normElapsed.Round(time.Millisecond), err)
+	}
+	fmt.Printf("Normalization done (%s)\n", normElapsed.Round(time.Millisecond))
 
 	// Print results
 	totalItems := 0
@@ -241,7 +273,7 @@ func main() {
 	fmt.Printf("\nTotal: %d categories, %d items\n", len(menu.Categories), totalItems)
 
 	if *dryRun {
-		fmt.Println("\n(dry-run mode, not writing to database)")
+		fmt.Printf("\n(dry-run mode, not writing to database) (total: %s)\n", time.Since(totalStart).Round(time.Millisecond))
 		return
 	}
 
@@ -254,10 +286,41 @@ func main() {
 	defer conn.Close(ctx)
 
 	q := db.New(conn)
+	t1 := time.Now()
 	if err := insertMenu(ctx, q, googlePlaceID, menu); err != nil {
 		log.Fatalf("Failed to insert menu: %v", err)
 	}
-	fmt.Println("\nMenu saved to database!")
+	fmt.Printf("\nMenu saved to database! (insert: %s, total: %s)\n",
+		time.Since(t1).Round(time.Millisecond),
+		time.Since(totalStart).Round(time.Millisecond))
+}
+
+// fixInvalidEscapes removes backslashes before characters that are not valid
+// JSON escape sequences. Some models produce \é or \開 inside strings.
+func fixInvalidEscapes(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	inString := false
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if ch == '"' && (i == 0 || s[i-1] != '\\') {
+			inString = !inString
+		}
+		if inString && ch == '\\' && i+1 < len(s) {
+			next := s[i+1]
+			// Valid JSON escapes: " \ / b f n r t u
+			switch next {
+			case '"', '\\', '/', 'b', 'f', 'n', 'r', 't', 'u':
+				b.WriteByte(ch)
+			default:
+				// Skip the invalid backslash
+				continue
+			}
+		} else {
+			b.WriteByte(ch)
+		}
+	}
+	return b.String()
 }
 
 func findImages(dir string) ([]string, error) {
@@ -275,21 +338,39 @@ func findImages(dir string) ([]string, error) {
 	return files, nil
 }
 
-func ocrImage(baseURL, model, imagePath string) (string, error) {
+func ocrImage(baseURL, model, imagePath string, maxDim int, timeout time.Duration) (string, error) {
 	imgData, err := os.ReadFile(imagePath)
 	if err != nil {
 		return "", fmt.Errorf("read image: %w", err)
 	}
 
+	if maxDim > 0 {
+		resized, err := resizeImage(imgData, maxDim)
+		if err != nil {
+			// Fall back to original if resize fails
+			log.Printf("  Warning: resize failed, using original: %v", err)
+		} else {
+			imgData = resized
+		}
+	}
+
 	imgB64 := base64.StdEncoding.EncodeToString(imgData)
 
-	return ollamaChat(baseURL, model, ocrPrompt, []string{imgB64})
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return ollamaChatCtx(ctx, baseURL, model, ocrPrompt, []string{imgB64})
 }
 
-func normalizeMenu(baseURL, model, rawText string) (*menuData, error) {
+func normalizeMenu(baseURL, model, rawText string, useOpenAI bool) (*menuData, error) {
 	prompt := normalizePrompt + rawText
 
-	result, err := ollamaChat(baseURL, model, prompt, nil)
+	var result string
+	var err error
+	if useOpenAI {
+		result, err = openaiChat(baseURL, model, prompt)
+	} else {
+		result, err = ollamaChat(baseURL, model, prompt, nil)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -304,6 +385,9 @@ func normalizeMenu(baseURL, model, rawText string) (*menuData, error) {
 		}
 	}
 
+	// Fix invalid JSON escape sequences (e.g. \é, \開) produced by some models
+	result = fixInvalidEscapes(result)
+
 	var menu menuData
 	if err := json.Unmarshal([]byte(result), &menu); err != nil {
 		return nil, fmt.Errorf("parse menu JSON: %w\nraw response:\n%s", err, result)
@@ -313,6 +397,10 @@ func normalizeMenu(baseURL, model, rawText string) (*menuData, error) {
 }
 
 func ollamaChat(baseURL, model, prompt string, images []string) (string, error) {
+	return ollamaChatCtx(context.Background(), baseURL, model, prompt, images)
+}
+
+func ollamaChatCtx(ctx context.Context, baseURL, model, prompt string, images []string) (string, error) {
 	msg := ollamaMessage{
 		Role:    "user",
 		Content: prompt,
@@ -330,7 +418,13 @@ func ollamaChat(baseURL, model, prompt string, images []string) (string, error) 
 		return "", fmt.Errorf("marshal request: %w", err)
 	}
 
-	resp, err := http.Post(baseURL+"/api/chat", "application/json", bytes.NewReader(jsonBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", baseURL+"/api/chat", bytes.NewReader(jsonBody))
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("ollama request: %w", err)
 	}
@@ -351,6 +445,185 @@ func ollamaChat(baseURL, model, prompt string, images []string) (string, error) 
 	}
 
 	return ollamaResp.Message.Content, nil
+}
+
+// resizeImage downscales a JPEG/PNG so the longest side is at most maxDim pixels.
+// Returns the re-encoded JPEG bytes. If the image is already small enough, returns original.
+func resizeImage(data []byte, maxDim int) ([]byte, error) {
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("decode: %w", err)
+	}
+
+	bounds := img.Bounds()
+	w, h := bounds.Dx(), bounds.Dy()
+
+	// Already small enough
+	if w <= maxDim && h <= maxDim {
+		return data, nil
+	}
+
+	// Calculate new dimensions preserving aspect ratio
+	var newW, newH int
+	if w > h {
+		newW = maxDim
+		newH = int(math.Round(float64(h) * float64(maxDim) / float64(w)))
+	} else {
+		newH = maxDim
+		newW = int(math.Round(float64(w) * float64(maxDim) / float64(h)))
+	}
+
+	dst := image.NewRGBA(image.Rect(0, 0, newW, newH))
+	draw.BiLinear.Scale(dst, dst.Bounds(), img, bounds, draw.Over, nil)
+
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, dst, &jpeg.Options{Quality: 85}); err != nil {
+		return nil, fmt.Errorf("encode: %w", err)
+	}
+
+	return buf.Bytes(), nil
+}
+
+// deduplicateImages removes near-duplicate photos using a simple average hash.
+// It downscales each image to 8x8 grayscale, computes a 64-bit hash, and skips
+// any image whose hamming distance to a previously seen hash is <= 10.
+func deduplicateImages(files []string) []string {
+	type hashEntry struct {
+		hash uint64
+		file string
+	}
+
+	var seen []hashEntry
+	var result []string
+
+	for _, f := range files {
+		h, err := imageHash(f)
+		if err != nil {
+			// Can't hash — keep it
+			result = append(result, f)
+			continue
+		}
+
+		isDup := false
+		for _, s := range seen {
+			if hammingDistance(h, s.hash) <= 10 {
+				isDup = true
+				break
+			}
+		}
+
+		if !isDup {
+			seen = append(seen, hashEntry{hash: h, file: f})
+			result = append(result, f)
+		}
+	}
+
+	return result
+}
+
+// imageHash computes a simple average hash: resize to 8x8 grayscale,
+// set bits where pixel > mean.
+func imageHash(path string) (uint64, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return 0, err
+	}
+
+	// Resize to 8x8
+	dst := image.NewGray(image.Rect(0, 0, 8, 8))
+	draw.BiLinear.Scale(dst, dst.Bounds(), img, img.Bounds(), draw.Over, nil)
+
+	// Compute mean
+	var sum float64
+	for _, p := range dst.Pix {
+		sum += float64(p)
+	}
+	mean := sum / 64.0
+
+	// Build hash
+	var hash uint64
+	for i, p := range dst.Pix {
+		if float64(p) > mean {
+			hash |= 1 << uint(i)
+		}
+	}
+
+	return hash, nil
+}
+
+func hammingDistance(a, b uint64) int {
+	x := a ^ b
+	count := 0
+	for x != 0 {
+		count++
+		x &= x - 1
+	}
+	return count
+}
+
+type openaiRequest struct {
+	Model    string          `json:"model"`
+	Stream   bool            `json:"stream"`
+	Messages []openaiMessage `json:"messages"`
+}
+
+type openaiMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type openaiResponse struct {
+	Choices []struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	} `json:"choices"`
+}
+
+func openaiChat(baseURL, model, prompt string) (string, error) {
+	reqBody := openaiRequest{
+		Model:  model,
+		Stream: false,
+		Messages: []openaiMessage{
+			{Role: "user", Content: prompt},
+		},
+	}
+
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("marshal request: %w", err)
+	}
+
+	resp, err := http.Post(baseURL+"/v1/chat/completions", "application/json", bytes.NewReader(jsonBody))
+	if err != nil {
+		return "", fmt.Errorf("openai request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("openai returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	var oaiResp openaiResponse
+	if err := json.Unmarshal(body, &oaiResp); err != nil {
+		return "", fmt.Errorf("parse response: %w", err)
+	}
+
+	if len(oaiResp.Choices) == 0 {
+		return "", fmt.Errorf("no choices in response")
+	}
+
+	return oaiResp.Choices[0].Message.Content, nil
 }
 
 func insertMenu(ctx context.Context, q *db.Queries, googlePlaceID string, menu *menuData) error {
