@@ -18,6 +18,7 @@ func main() {
 	apiKey := flag.String("api-key", "", "Google API key (or set GOOGLE_API_KEY env var)")
 	dbURL := flag.String("db", "", "PostgreSQL connection string (or set DATABASE_URL env var)")
 	lang := flag.String("lang", "zh-TW", "Language code for API results")
+	minRatings := flag.Int("min-ratings", 5, "Skip places with fewer than N ratings")
 	flag.Parse()
 
 	key := *apiKey
@@ -75,6 +76,17 @@ func main() {
 			if promoted[placeID] {
 				continue
 			}
+
+			if r.UserRatingCount < *minRatings {
+				name := placeID
+				if r.DisplayName != nil {
+					name = r.DisplayName.Text
+				}
+				fmt.Printf("  Skipped: %s (%d ratings < %d min)\n", name, r.UserRatingCount, *minRatings)
+				promoted[placeID] = true
+				continue
+			}
+
 			promoted[placeID] = true
 
 			place, err := promotePlace(ctx, q, r, placeID)

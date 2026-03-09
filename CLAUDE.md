@@ -33,12 +33,13 @@ cd deploy && cp .env.example .env && docker compose up -d
 # Build and run the seed CLI (Step 1: discovery, free)
 go build -o seed ./cmd/seed
 ./seed --lat 25.033 --lng 121.565 --radius 1000 --types restaurant \
+    --lang zh-TW \
     --api-key $GOOGLE_API_KEY \
     --db "postgres://query:query@localhost:5432/query?sslmode=disable"
 
 # Build and run the fetch CLI (Step 2: detail fetch, ~$0.035/query)
 go build -o fetch ./cmd/fetch
-./fetch --api-key $GOOGLE_API_KEY \
+./fetch --lang zh-TW --api-key $GOOGLE_API_KEY \
     --db "postgres://query:query@localhost:5432/query?sslmode=disable"
 
 # Build and run the scrape CLI (menu photo scraper via Google Maps)
@@ -81,11 +82,11 @@ Go 1.25.0 project — a restaurant/place database backed by PostgreSQL.
 **Schema**: Places (Google Places integration) → Restaurant details (1:1) → Menu categories → Menu items, combo meals, add-ons. All foreign keys use CASCADE DELETE. Staging tables (`discovery_queries`, `place_discoveries`) hold intermediate discovery results before promotion.
 
 **Data pipeline** has four steps:
-1. `cmd/seed` — Discover places via free Google API calls, store in staging tables
-2. `cmd/fetch` — Replay discovery queries with advanced field masks (~$0.035/query), promote to `places`/`place_opening_hours`
+1. `cmd/seed` — Discover places via free Google API calls, store in staging tables. Always use `--lang zh-TW` for Chinese names/addresses.
+2. `cmd/fetch` — Replay discovery queries with advanced field masks (~$0.035/query), promote to `places`/`place_opening_hours`. Always use `--lang zh-TW`.
 3. `cmd/scrape` — Scrape menu photos from Google Maps "菜單" tab via headless Chrome
 4. `cmd/ocr` — Two-pass menu extraction: GLM-OCR reads photo text, Qwen3.5 9B normalizes into structured JSON, then inserts into `restaurant_details`/`menu_categories`/`menu_items`
 
 **Ollama setup**: `ollama pull glm-ocr && ollama pull qwen3.5:9b && ollama serve`. Requires GPU (tested on RTX 3090, 24GB VRAM). GLM-OCR works well on printed menus, less accurate on handwritten/vertical text.
 
-**Types**: Prices stored as integers (cents). Nullable fields use `pgtype` types.
+**Types**: Prices stored as integers (TWD). Special price values: `-1` = unknown (not shown on menu), `-2` = 時價 (market price). Nullable fields use `pgtype` types.

@@ -41,7 +41,8 @@ Rules:
 - price is in TWD (New Taiwan Dollars), as an integer (no decimals)
 - ONLY include items where you are confident the price matches the item. If a price seems misaligned or uncertain, skip that item rather than guess wrong.
 - The OCR text comes from multiple photos of the same menu. Cross-reference across photos: if the same item appears with different prices, use the most common price.
-- If an item has no price at all, set price to 0
+- If an item has no price at all, set price to -1 (unknown/not shown)
+- If the menu explicitly says "時價" (market price) for an item, set price to -2
 - If there are no clear categories, use "其他" as the category name
 - Merge duplicate items (same name) keeping the first occurrence
 - description is optional, omit or set to "" if none

@@ -254,6 +254,8 @@ header .back:hover { opacity: 1; }
 .item-desc { font-size: 12px; color: #999; margin-top: 2px; }
 .item-price { font-size: 16px; font-weight: 700; color: #e74c3c; white-space: nowrap; margin-left: 16px; }
 .item-price::before { content: "NT$"; font-size: 12px; font-weight: 400; }
+.item-price.unknown { color: #999; font-weight: 500; }
+.item-price.unknown::before { content: ""; }
 
 .loading { text-align: center; padding: 40px; color: #999; }
 .empty { text-align: center; padding: 60px 20px; color: #999; }
@@ -264,6 +266,7 @@ header .back:hover { opacity: 1; }
   <header>
     <div class="back" id="back" onclick="showList()">← 返回餐廳列表</div>
     <h1 id="title">餐廳菜單</h1>
+    <a href="/debug" style="position:absolute;top:16px;right:20px;color:rgba(255,255,255,0.5);font-size:12px;text-decoration:none;">Debug</a>
   </header>
   <div id="list" class="restaurant-list">
     <div class="loading">載入中...</div>
@@ -313,7 +316,7 @@ async function showMenu(rid, name) {
       '<div class="item-name">' + esc(it.name) + '</div>' +
       (it.description ? '<div class="item-desc">' + esc(it.description) + '</div>' : '') +
       '</div>' +
-      (it.price > 0 ? '<div class="item-price">' + it.price + '</div>' : '') +
+      (it.price > 0 ? '<div class="item-price">' + it.price + '</div>' : it.price === -2 ? '<div class="item-price unknown">時價</div>' : it.price === -1 ? '<div class="item-price unknown">未知</div>' : '') +
       '</div>'
     ).join('') +
     '</div>'
