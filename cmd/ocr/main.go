@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/image/draw"
@@ -72,7 +73,6 @@ Rules:
 - Ignore items that only appear in English, Japanese, or Korean without a Chinese equivalent.
 - price is in TWD (New Taiwan Dollars), as an integer (no decimals)
 - ONLY include items where you are confident the price matches the item. If a price seems misaligned or uncertain, skip that item rather than guess wrong.
-- The OCR text comes from multiple photos of the same menu. Cross-reference across photos: if the same item appears with different prices, use the most common price.
 - If an item has no price at all, set price to -1 (unknown/not shown)
 - If the menu explicitly says "時價" (market price) for an item, set price to -2
 - If there are no clear categories, use "其他" as the category name
@@ -92,6 +92,7 @@ type ollamaRequest struct {
 	Model    string          `json:"model"`
 	Stream   bool            `json:"stream"`
 	Messages []ollamaMessage `json:"messages"`
+	Format   string          `json:"format,omitempty"`
 }
 
 type ollamaMessage struct {
@@ -154,6 +155,8 @@ func main() {
 	normalizeModel := flag.String("normalize-model", "qwen3.5:9b", "Model name for normalization (text-only)")
 	normalizeURL := flag.String("normalize-url", "", "OpenAI-compatible API base URL for normalization (if different from --ollama)")
 	ocrTimeout := flag.Duration("ocr-timeout", 30*time.Second, "Timeout per OCR image (skip image on timeout)")
+	ocrWorkers := flag.Int("ocr-workers", 1, "OCR concurrency (1 = sequential, safer; >1 = parallel)")
+	normWorkers := flag.Int("norm-workers", 1, "Normalization concurrency: 1 = one combined call (default), N>1 = per-photo with N parallel workers")
 	maxPhotos := flag.Int("max-photos", 0, "Max photos to OCR (0 = all)")
 	maxDim := flag.Int("max-dim", 800, "Resize images so longest side is at most this many pixels (0 = no resize)")
 	dedup := flag.Bool("dedup", true, "Skip near-duplicate photos using perceptual hashing")
@@ -196,44 +199,118 @@ func main() {
 
 	// Pass 1: OCR all images
 	totalStart := time.Now()
-	var allOCRText strings.Builder
-	var ocrTotal time.Duration
+	type ocrResult struct {
+		text string
+		dur  time.Duration
+		err  error
+	}
+	ocrResults := make([]ocrResult, len(files))
+	var ocrWG sync.WaitGroup
+	ocrSem := make(chan struct{}, *ocrWorkers)
 	for i, f := range files {
-		fmt.Printf("[%d/%d] OCR: %s ...\n", i+1, len(files), filepath.Base(f))
-		t0 := time.Now()
-		text, err := ocrImage(*ollamaURL, *model, f, *maxDim, *ocrTimeout)
-		elapsed := time.Since(t0)
-		ocrTotal += elapsed
-		if err != nil {
-			log.Printf("  Warning: OCR failed (%s): %v", elapsed.Round(time.Millisecond), err)
-			continue
+		ocrWG.Add(1)
+		go func(idx int, file string) {
+			defer ocrWG.Done()
+			ocrSem <- struct{}{}
+			defer func() { <-ocrSem }()
+			t0 := time.Now()
+			text, err := ocrImage(*ollamaURL, *model, file, *maxDim, *ocrTimeout)
+			ocrResults[idx] = ocrResult{text: text, dur: time.Since(t0), err: err}
+		}(i, f)
+	}
+	ocrWG.Wait()
+	ocrWall := time.Since(totalStart)
+
+	// Print OCR results in order, collect per-photo texts
+	var photoTexts []string
+	for i, r := range ocrResults {
+		name := filepath.Base(files[i])
+		if r.err != nil {
+			log.Printf("[%d/%d] OCR: %s — Failed (%s): %v", i+1, len(files), name, r.dur.Round(time.Millisecond), r.err)
+		} else {
+			fmt.Printf("[%d/%d] OCR: %s — Done (%s, %d chars)\n", i+1, len(files), name, r.dur.Round(time.Millisecond), len(r.text))
+			photoTexts = append(photoTexts, r.text)
 		}
-		fmt.Printf("  Done (%s, %d chars)\n", elapsed.Round(time.Millisecond), len(text))
+	}
+	fmt.Printf("OCR: %d/%d photos in %s (wall)\n", len(photoTexts), len(files), ocrWall.Round(time.Millisecond))
+
+	if len(photoTexts) == 0 {
+		log.Fatal("No text extracted from any photos")
+	}
+
+	// Print raw OCR text
+	var allOCRText strings.Builder
+	for i, text := range photoTexts {
 		allOCRText.WriteString(fmt.Sprintf("--- Photo %d ---\n", i+1))
 		allOCRText.WriteString(text)
 		allOCRText.WriteString("\n\n")
 	}
-	fmt.Printf("OCR total: %s for %d photos\n", ocrTotal.Round(time.Millisecond), len(files))
-
-	rawText := allOCRText.String()
-	if strings.TrimSpace(rawText) == "" {
-		log.Fatal("No text extracted from any photos")
-	}
-	fmt.Printf("\n=== Raw OCR text (%d chars) ===\n%s\n", len(rawText), rawText)
+	fmt.Printf("\n=== Raw OCR text (%d chars) ===\n%s\n", allOCRText.Len(), allOCRText.String())
 
 	// Pass 2: Normalize into structured JSON
-	fmt.Println("=== Normalizing into structured menu ===")
 	normURL := *ollamaURL
 	if *normalizeURL != "" {
 		normURL = *normalizeURL
 	}
-	t0 := time.Now()
-	menu, err := normalizeMenu(normURL, *normalizeModel, rawText, *normalizeURL != "")
-	normElapsed := time.Since(t0)
-	if err != nil {
-		log.Fatalf("Normalization failed (%s): %v", normElapsed.Round(time.Millisecond), err)
+	useOpenAI := *normalizeURL != ""
+
+	normStart := time.Now()
+	var menu *menuData
+
+	if *normWorkers <= 1 {
+		// Combined mode: concatenate all texts, one normalization call
+		fmt.Println("=== Normalizing combined text ===")
+		combined := allOCRText.String()
+		var err error
+		menu, err = normalizeMenu(normURL, *normalizeModel, combined, useOpenAI)
+		if err != nil {
+			log.Fatalf("Normalization failed (%s): %v", time.Since(normStart).Round(time.Millisecond), err)
+		}
+	} else {
+		// Per-photo mode: normalize each photo independently with N workers
+		fmt.Printf("=== Normalizing %d photos (%d workers) ===\n", len(photoTexts), *normWorkers)
+		type normResult struct {
+			menu *menuData
+			dur  time.Duration
+			err  error
+		}
+		normResults := make([]normResult, len(photoTexts))
+		sem := make(chan struct{}, *normWorkers)
+		var normWG sync.WaitGroup
+		for i, text := range photoTexts {
+			normWG.Add(1)
+			go func(idx int, txt string) {
+				defer normWG.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				t0 := time.Now()
+				m, err := normalizeMenu(normURL, *normalizeModel, txt, useOpenAI)
+				normResults[idx] = normResult{menu: m, dur: time.Since(t0), err: err}
+			}(i, text)
+		}
+		normWG.Wait()
+
+		var menus []*menuData
+		for i, r := range normResults {
+			if r.err != nil {
+				log.Printf("  Photo %d norm failed (%s): %v", i+1, r.dur.Round(time.Millisecond), r.err)
+			} else {
+				items := 0
+				for _, c := range r.menu.Categories {
+					items += len(c.Items)
+				}
+				fmt.Printf("  Photo %d normalized (%s, %d items)\n", i+1, r.dur.Round(time.Millisecond), items)
+				menus = append(menus, r.menu)
+			}
+		}
+
+		if len(menus) == 0 {
+			log.Fatal("No photos normalized successfully")
+		}
+		menu = mergeMenus(menus)
 	}
-	fmt.Printf("Normalization done (%s)\n", normElapsed.Round(time.Millisecond))
+	normWall := time.Since(normStart)
+	fmt.Printf("Normalization done (%s)\n", normWall.Round(time.Millisecond))
 
 	// Print results
 	totalItems := 0
@@ -323,6 +400,55 @@ func fixInvalidEscapes(s string) string {
 	return b.String()
 }
 
+// mergeMenus combines per-photo menuData results into a single menu.
+// Categories with the same name are merged, duplicate items are deduped by name.
+func mergeMenus(menus []*menuData) *menuData {
+	type catEntry struct {
+		cat      menuCategory
+		itemSeen map[string]bool
+	}
+
+	catMap := make(map[string]int) // name -> index in cats
+	var cats []catEntry
+
+	for _, m := range menus {
+		for _, cat := range m.Categories {
+			idx, exists := catMap[cat.Name]
+			if !exists {
+				idx = len(cats)
+				catMap[cat.Name] = idx
+				cats = append(cats, catEntry{
+					cat:      menuCategory{Name: cat.Name},
+					itemSeen: make(map[string]bool),
+				})
+			}
+			for _, item := range cat.Items {
+				if !cats[idx].itemSeen[item.Name] {
+					cats[idx].itemSeen[item.Name] = true
+					cats[idx].cat.Items = append(cats[idx].cat.Items, item)
+				}
+			}
+		}
+	}
+
+	result := &menuData{}
+	for _, e := range cats {
+		result.Categories = append(result.Categories, e.cat)
+	}
+
+	comboSeen := make(map[string]bool)
+	for _, m := range menus {
+		for _, combo := range m.Combos {
+			if !comboSeen[combo.Name] {
+				comboSeen[combo.Name] = true
+				result.Combos = append(result.Combos, combo)
+			}
+		}
+	}
+
+	return result
+}
+
 func findImages(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -358,7 +484,7 @@ func ocrImage(baseURL, model, imagePath string, maxDim int, timeout time.Duratio
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	return ollamaChatCtx(ctx, baseURL, model, ocrPrompt, []string{imgB64})
+	return ollamaChatCtx(ctx, baseURL, model, ocrPrompt, []string{imgB64}, "")
 }
 
 func normalizeMenu(baseURL, model, rawText string, useOpenAI bool) (*menuData, error) {
@@ -369,7 +495,7 @@ func normalizeMenu(baseURL, model, rawText string, useOpenAI bool) (*menuData, e
 	if useOpenAI {
 		result, err = openaiChat(baseURL, model, prompt)
 	} else {
-		result, err = ollamaChat(baseURL, model, prompt, nil)
+		result, err = ollamaChat(baseURL, model, prompt, nil, "json")
 	}
 	if err != nil {
 		return nil, err
@@ -396,11 +522,11 @@ func normalizeMenu(baseURL, model, rawText string, useOpenAI bool) (*menuData, e
 	return &menu, nil
 }
 
-func ollamaChat(baseURL, model, prompt string, images []string) (string, error) {
-	return ollamaChatCtx(context.Background(), baseURL, model, prompt, images)
+func ollamaChat(baseURL, model, prompt string, images []string, format string) (string, error) {
+	return ollamaChatCtx(context.Background(), baseURL, model, prompt, images, format)
 }
 
-func ollamaChatCtx(ctx context.Context, baseURL, model, prompt string, images []string) (string, error) {
+func ollamaChatCtx(ctx context.Context, baseURL, model, prompt string, images []string, format string) (string, error) {
 	msg := ollamaMessage{
 		Role:    "user",
 		Content: prompt,
@@ -411,6 +537,7 @@ func ollamaChatCtx(ctx context.Context, baseURL, model, prompt string, images []
 		Model:    model,
 		Stream:   false,
 		Messages: []ollamaMessage{msg},
+		Format:   format,
 	}
 
 	jsonBody, err := json.Marshal(reqBody)
