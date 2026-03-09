@@ -40,7 +40,11 @@ go build -o seed ./cmd/seed
 go build -o fetch ./cmd/fetch
 ./fetch --api-key $GOOGLE_API_KEY \
     --db "postgres://query:query@localhost:5432/query?sslmode=disable" \
-    --max-photos 3 --photos-dir photos
+    --max-photos 10 --photos-dir photos
+
+# Build and run the scrape CLI (menu photo scraper via Google Maps)
+go build -o scrape ./cmd/scrape
+./scrape ChIJ41wbgbqrQjQR75mxQgbywys   # scrape by google_place_id
 ```
 
 ## Architecture
@@ -58,6 +62,7 @@ Go 1.25.0 project — a restaurant/place database backed by PostgreSQL.
 - `cmd/server/` — Server entry point (placeholder)
 - `cmd/seed/` — CLI for Step 1 discovery: grid sweep with Google Places API, stores to staging tables
 - `cmd/fetch/` — CLI for Step 2 detail fetch: replays discovery queries with advanced fields, promotes to `places`/`place_opening_hours`/`place_photos`, downloads photos locally
+- `cmd/scrape/` — CLI for scraping menu photos from Google Maps using headless Chrome (chromedp)
 - `internal/seed/` — Google Places API client, grid sweep logic, geo helpers, photo download
 
 **sqlc config** (`sqlc.yaml`): Uses `pgx/v5` as the SQL package. Queries dir is `internal/db/queries`, schema dir is `migrations`, output goes to `internal/db/generated`.

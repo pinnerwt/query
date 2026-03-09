@@ -3,4 +3,6 @@ deploy/.env
 .env
 /seed
 /fetch
+/scrape
 photos/
+menu_photos/
