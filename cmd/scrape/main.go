@@ -19,14 +19,15 @@ import (
 
 func main() {
 	outDir := flag.String("out", "menu_photos", "Output directory for menu photos")
+	proxy := flag.String("proxy", "", "Proxy URL (e.g. socks5://host:port or http://host:port)")
 	flag.Parse()
 
 	if flag.NArg() < 1 {
-		log.Fatal("Usage: scrape [--out DIR] <google_place_id>")
+		log.Fatal("Usage: scrape [--out DIR] [--proxy URL] <google_place_id>")
 	}
 	placeID := flag.Arg(0)
 
-	urls, err := scrapeMenuPhotos(placeID)
+	urls, err := scrapeMenuPhotos(placeID, *proxy)
 	if err != nil {
 		log.Fatalf("Scrape failed: %v", err)
 	}
@@ -90,8 +91,8 @@ func main() {
 	fmt.Printf("\nDone! %d menu photos saved to %s\n", downloaded, placeDir)
 }
 
-func scrapeMenuPhotos(placeID string) ([]string, error) {
-	url := fmt.Sprintf("https://www.google.com/maps/place/?q=place_id:%s", placeID)
+func scrapeMenuPhotos(placeID string, proxyURL string) ([]string, error) {
+	url := fmt.Sprintf("https://www.google.com/maps/place/?q=place_id:%s&hl=zh-TW", placeID)
 
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", true),
@@ -102,6 +103,9 @@ func scrapeMenuPhotos(placeID string) ([]string, error) {
 		chromedp.UserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
 		chromedp.WindowSize(1280, 900),
 	)
+	if proxyURL != "" {
+		opts = append(opts, chromedp.ProxyServer(proxyURL))
+	}
 
 	allocCtx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	defer cancel()

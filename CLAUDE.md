@@ -43,7 +43,9 @@ go build -o fetch ./cmd/fetch
 
 # Build and run the scrape CLI (menu photo scraper via Google Maps)
 go build -o scrape ./cmd/scrape
-./scrape ChIJ41wbgbqrQjQR75mxQgbywys   # scrape by google_place_id
+./scrape ChIJ41wbgbqrQjQR75mxQgbywys                # scrape by google_place_id
+./scrape --proxy socks5://host:port ChIJ41wbgbqrQjQR  # with proxy
+./scrape --proxy http://user:pass@host:port ChIJ...    # with authenticated proxy
 ```
 
 ## Architecture
@@ -61,7 +63,7 @@ Go 1.25.0 project — a restaurant/place database backed by PostgreSQL.
 - `cmd/server/` — Server entry point (placeholder)
 - `cmd/seed/` — CLI for Step 1 discovery: grid sweep with Google Places API, stores to staging tables
 - `cmd/fetch/` — CLI for Step 2 detail fetch: replays discovery queries with advanced fields, promotes to `places`/`place_opening_hours`
-- `cmd/scrape/` — CLI for scraping menu photos from Google Maps using headless Chrome (chromedp)
+- `cmd/scrape/` — CLI for scraping menu photos from Google Maps using headless Chrome (chromedp). Supports `--proxy` for SOCKS5/HTTP proxies. Forces `hl=zh-TW` so Chinese selectors work regardless of proxy region.
 - `internal/seed/` — Google Places API client, grid sweep logic, geo helpers
 
 **sqlc config** (`sqlc.yaml`): Uses `pgx/v5` as the SQL package. Queries dir is `internal/db/queries`, schema dir is `migrations`, output goes to `internal/db/generated`.
