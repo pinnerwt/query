@@ -93,6 +93,7 @@ type ollamaRequest struct {
 	Stream   bool            `json:"stream"`
 	Messages []ollamaMessage `json:"messages"`
 	Format   string          `json:"format,omitempty"`
+	Think    *bool           `json:"think,omitempty"`
 }
 
 type ollamaMessage struct {
@@ -155,7 +156,7 @@ func main() {
 	normalizeModel := flag.String("normalize-model", "qwen3.5:9b", "Model name for normalization (text-only)")
 	normalizeURL := flag.String("normalize-url", "", "OpenAI-compatible API base URL for normalization (if different from --ollama)")
 	ocrTimeout := flag.Duration("ocr-timeout", 30*time.Second, "Timeout per OCR image (skip image on timeout)")
-	ocrWorkers := flag.Int("ocr-workers", 1, "OCR concurrency (1 = sequential, safer; >1 = parallel)")
+	ocrWorkers := flag.Int("ocr-workers", 4, "OCR concurrency (1 = sequential, safer; >1 = parallel)")
 	normWorkers := flag.Int("norm-workers", 0, "Normalization mode: 0 = combined (default), N>0 = per-photo with N parallel workers")
 	maxPhotos := flag.Int("max-photos", 0, "Max photos to OCR (0 = all)")
 	maxDim := flag.Int("max-dim", 800, "Resize images so longest side is at most this many pixels (0 = no resize)")
@@ -484,7 +485,7 @@ func ocrImage(baseURL, model, imagePath string, maxDim int, timeout time.Duratio
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	return ollamaChatCtx(ctx, baseURL, model, ocrPrompt, []string{imgB64}, "")
+	return ollamaChatCtx(ctx, baseURL, model, ocrPrompt, []string{imgB64}, "", nil)
 }
 
 func normalizeMenu(baseURL, model, rawText string, useOpenAI bool) (*menuData, error) {
@@ -495,7 +496,8 @@ func normalizeMenu(baseURL, model, rawText string, useOpenAI bool) (*menuData, e
 	if useOpenAI {
 		result, err = openaiChat(baseURL, model, prompt)
 	} else {
-		result, err = ollamaChat(baseURL, model, prompt, nil, "")
+		thinkFalse := false
+		result, err = ollamaChat(baseURL, model, prompt, nil, "", &thinkFalse)
 	}
 	if err != nil {
 		return nil, err
@@ -522,11 +524,11 @@ func normalizeMenu(baseURL, model, rawText string, useOpenAI bool) (*menuData, e
 	return &menu, nil
 }
 
-func ollamaChat(baseURL, model, prompt string, images []string, format string) (string, error) {
-	return ollamaChatCtx(context.Background(), baseURL, model, prompt, images, format)
+func ollamaChat(baseURL, model, prompt string, images []string, format string, think *bool) (string, error) {
+	return ollamaChatCtx(context.Background(), baseURL, model, prompt, images, format, think)
 }
 
-func ollamaChatCtx(ctx context.Context, baseURL, model, prompt string, images []string, format string) (string, error) {
+func ollamaChatCtx(ctx context.Context, baseURL, model, prompt string, images []string, format string, think *bool) (string, error) {
 	msg := ollamaMessage{
 		Role:    "user",
 		Content: prompt,
@@ -538,6 +540,7 @@ func ollamaChatCtx(ctx context.Context, baseURL, model, prompt string, images []
 		Stream:   false,
 		Messages: []ollamaMessage{msg},
 		Format:   format,
+		Think:    think,
 	}
 
 	jsonBody, err := json.Marshal(reqBody)
