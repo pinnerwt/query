@@ -7,7 +7,6 @@ import (
 	"log"
 	"math/big"
 	"os"
-	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -18,8 +17,6 @@ import (
 func main() {
 	apiKey := flag.String("api-key", "", "Google API key (or set GOOGLE_API_KEY env var)")
 	dbURL := flag.String("db", "", "PostgreSQL connection string (or set DATABASE_URL env var)")
-	photosDir := flag.String("photos-dir", "photos", "Directory to save photos")
-	maxPhotos := flag.Int("max-photos", 3, "Max photos to download per place")
 	flag.Parse()
 
 	key := *apiKey
@@ -59,7 +56,7 @@ func main() {
 	// Track which places we've already promoted (across queries)
 	promoted := make(map[string]bool)
 
-	var totalPromoted, totalPhotos int
+	var totalPromoted int
 
 	for i, dq := range queries {
 		fmt.Printf("\n[%d/%d] Replaying query (%.4f, %.4f) r=%.0fm type=%s ...\n",
@@ -91,38 +88,12 @@ func main() {
 				}
 			}
 
-			// Photos
-			photosDownloaded := 0
-			for j, photo := range r.Photos {
-				if j >= *maxPhotos {
-					break
-				}
-				localPath, err := client.DownloadPhoto(ctx, photo.Name, *photosDir)
-				if err != nil {
-					log.Printf("  Warning: failed to download photo for %s: %v", placeID, err)
-					continue
-				}
-				err = q.InsertPlacePhoto(ctx, db.InsertPlacePhotoParams{
-					PlaceID:              place.ID,
-					GooglePhotoReference: pgtype.Text{String: photo.Name, Valid: true},
-					Url:                  pgtype.Text{String: localPath, Valid: true},
-					Width:                pgtype.Int4{Int32: int32(photo.WidthPx), Valid: photo.WidthPx > 0},
-					Height:               pgtype.Int4{Int32: int32(photo.HeightPx), Valid: photo.HeightPx > 0},
-				})
-				if err != nil {
-					log.Printf("  Warning: failed to save photo record for %s: %v", placeID, err)
-					continue
-				}
-				photosDownloaded++
-			}
-			totalPhotos += photosDownloaded
-
 			name := placeID
 			if r.DisplayName != nil {
 				name = r.DisplayName.Text
 			}
-			fmt.Printf("  Promoted: %s (rating=%.1f, %d reviews, %d photos)\n",
-				name, r.Rating, r.UserRatingCount, photosDownloaded)
+			fmt.Printf("  Promoted: %s (rating=%.1f, %d reviews)\n",
+				name, r.Rating, r.UserRatingCount)
 
 			// Mark as fetched in staging table
 			if err := q.MarkDiscoveryFetched(ctx, placeID); err != nil {
@@ -132,7 +103,7 @@ func main() {
 		}
 	}
 
-	fmt.Printf("\nDone: %d places promoted, %d photos downloaded\n", totalPromoted, totalPhotos)
+	fmt.Printf("\nDone: %d places promoted\n", totalPromoted)
 }
 
 func promotePlace(ctx context.Context, q *db.Queries, r seed.PlaceResult, placeID string) (db.Place, error) {
@@ -157,11 +128,10 @@ func promotePlace(ctx context.Context, q *db.Queries, r seed.PlaceResult, placeI
 
 	priceLevel := parsePriceLevel(r.PriceLevel)
 
-	// Delete existing hours/photos before re-inserting (idempotent)
+	// Delete existing hours before re-inserting (idempotent)
 	existing, err := q.GetPlaceByGoogleID(ctx, placeID)
 	if err == nil {
 		_ = q.DeleteOpeningHours(ctx, existing.ID)
-		_ = q.DeletePlacePhotos(ctx, existing.ID)
 	}
 
 	return q.UpsertPlace(ctx, db.UpsertPlaceParams{
@@ -218,13 +188,4 @@ func parsePriceLevel(s string) pgtype.Int2 {
 	default:
 		return pgtype.Int2{}
 	}
-}
-
-// priceLevelString converts price level int back to display string.
-func priceLevelString(level pgtype.Int2) string {
-	if !level.Valid {
-		return ""
-	}
-	symbols := strings.Repeat("$", int(level.Int16)+1)
-	return symbols
 }
