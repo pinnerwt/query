@@ -46,6 +46,13 @@ go build -o scrape ./cmd/scrape
 ./scrape ChIJ41wbgbqrQjQR75mxQgbywys                # scrape by google_place_id
 ./scrape --proxy socks5://host:port ChIJ41wbgbqrQjQR  # with proxy
 ./scrape --proxy http://user:pass@host:port ChIJ...    # with authenticated proxy
+
+# Build and run the OCR CLI (menu extraction via GLM-OCR + Ollama)
+# Requires: ollama serve running with glm-ocr model pulled
+go build -o ocr ./cmd/ocr
+./ocr menu_photos/ChIJ41wbgbqrQjQR75mxQgbywys/       # OCR all photos in directory
+./ocr menu_photos/ChIJ.../photo.jpg                    # OCR single image
+./ocr --ollama http://gpu-host:11434 menu_photos/...   # use remote Ollama instance
 ```
 
 ## Architecture
@@ -64,6 +71,7 @@ Go 1.25.0 project — a restaurant/place database backed by PostgreSQL.
 - `cmd/seed/` — CLI for Step 1 discovery: grid sweep with Google Places API, stores to staging tables
 - `cmd/fetch/` — CLI for Step 2 detail fetch: replays discovery queries with advanced fields, promotes to `places`/`place_opening_hours`
 - `cmd/scrape/` — CLI for scraping menu photos from Google Maps using headless Chrome (chromedp). Supports `--proxy` for SOCKS5/HTTP proxies. Forces `hl=zh-TW` so Chinese selectors work regardless of proxy region.
+- `cmd/ocr/` — CLI for menu text extraction from photos using GLM-OCR (0.9B VLM) via Ollama API. Accepts single images or directories.
 - `internal/seed/` — Google Places API client, grid sweep logic, geo helpers
 
 **sqlc config** (`sqlc.yaml`): Uses `pgx/v5` as the SQL package. Queries dir is `internal/db/queries`, schema dir is `migrations`, output goes to `internal/db/generated`.
@@ -72,6 +80,12 @@ Go 1.25.0 project — a restaurant/place database backed by PostgreSQL.
 
 **Schema**: Places (Google Places integration) → Restaurant details (1:1) → Menu categories → Menu items, combo meals, add-ons. All foreign keys use CASCADE DELETE. Staging tables (`discovery_queries`, `place_discoveries`) hold intermediate discovery results before promotion.
 
-**Place seeding** is a two-step process: Step 1 (`cmd/seed`) discovers places via free Google API calls and stores them in staging tables. Step 2 (`cmd/fetch`) replays saved queries with advanced field masks (~$0.035/query) to get ratings, hours, etc., then promotes into the full `places` schema. Menu photos are scraped separately via `cmd/scrape` using headless Chrome on Google Maps.
+**Data pipeline** has four steps:
+1. `cmd/seed` — Discover places via free Google API calls, store in staging tables
+2. `cmd/fetch` — Replay discovery queries with advanced field masks (~$0.035/query), promote to `places`/`place_opening_hours`
+3. `cmd/scrape` — Scrape menu photos from Google Maps "菜單" tab via headless Chrome
+4. `cmd/ocr` — Extract menu items/prices from photos using GLM-OCR (0.9B VLM, runs locally via Ollama on GPU)
+
+**GLM-OCR setup**: `ollama pull glm-ocr` then `ollama serve`. Requires GPU (tested on RTX 3090). The model outputs structured text from menu photos — works well on printed menus, less accurate on handwritten/vertical text.
 
 **Types**: Prices stored as integers (cents). Nullable fields use `pgtype` types.

@@ -4,5 +4,6 @@ deploy/.env
 /seed
 /fetch
 /scrape
+/ocr
 photos/
 menu_photos/
