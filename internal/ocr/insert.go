@@ -14,7 +14,6 @@ func InsertMenu(ctx context.Context, q *db.Queries, restaurantID int64, menu *Me
 	// Clear existing menu data (idempotent)
 	_ = q.DeleteMenuItemsByRestaurant(ctx, restaurantID)
 	_ = q.DeleteMenuCategoriesByRestaurant(ctx, restaurantID)
-	_ = q.DeleteComboMealsByRestaurant(ctx, restaurantID)
 
 	// Insert categories and items
 	for i, cat := range menu.Categories {
@@ -52,43 +51,29 @@ func InsertMenu(ctx context.Context, q *db.Queries, restaurantID int64, menu *Me
 					return fmt.Errorf("create price tier %q for item %q: %w", tier.Label, item.Name, err)
 				}
 			}
-		}
-	}
 
-	// Insert combo meals
-	for _, combo := range menu.Combos {
-		cm, err := q.CreateComboMeal(ctx, db.CreateComboMealParams{
-			RestaurantID: restaurantID,
-			Name:         combo.Name,
-			Description:  pgtype.Text{String: combo.Description, Valid: combo.Description != ""},
-			Price:        int32(combo.Price),
-		})
-		if err != nil {
-			return fmt.Errorf("create combo %q: %w", combo.Name, err)
-		}
-
-		for gi, group := range combo.Groups {
-			cg, err := q.CreateComboMealGroup(ctx, db.CreateComboMealGroupParams{
-				ComboMealID: cm.ID,
-				Name:        group.Name,
-				MinChoices:  int32(group.MinChoices),
-				MaxChoices:  int32(group.MaxChoices),
-				SortOrder:   int32(gi),
-			})
-			if err != nil {
-				return fmt.Errorf("create combo group %q: %w", group.Name, err)
-			}
-
-			for oi, opt := range group.Options {
-				_, err := q.CreateComboMealGroupOption(ctx, db.CreateComboMealGroupOptionParams{
-					GroupID:         cg.ID,
-					MenuItemID:      pgtype.Int8{},
-					ItemName:        pgtype.Text{String: opt.Name, Valid: opt.Name != ""},
-					PriceAdjustment: int32(opt.PriceAdjustment),
-					SortOrder:       int32(oi),
+			for gi, og := range item.OptionGroups {
+				group, err := q.CreateOptionGroup(ctx, db.CreateOptionGroupParams{
+					MenuItemID: mi.ID,
+					Name:       og.Name,
+					MinChoices: int32(og.MinChoices),
+					MaxChoices: int32(og.MaxChoices),
+					SortOrder:  int32(gi),
 				})
 				if err != nil {
-					return fmt.Errorf("create combo option %q: %w", opt.Name, err)
+					return fmt.Errorf("create option group %q for item %q: %w", og.Name, item.Name, err)
+				}
+
+				for oi, opt := range og.Options {
+					_, err := q.CreateOptionChoice(ctx, db.CreateOptionChoiceParams{
+						GroupID:         group.ID,
+						Name:            opt.Name,
+						PriceAdjustment: int32(opt.PriceAdjustment),
+						SortOrder:       int32(oi),
+					})
+					if err != nil {
+						return fmt.Errorf("create option %q in group %q: %w", opt.Name, og.Name, err)
+					}
 				}
 			}
 		}
