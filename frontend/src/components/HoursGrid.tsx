@@ -154,7 +154,7 @@ export default function HoursGrid({ hours, dirty, onGridChange, onSave, saving, 
   const handleTouchMove = useCallback((e: TouchEvent) => {
     if (!dragging.current || !gridRef.current) return;
     const touch = e.touches[0];
-    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+    const el = document.elementFromPoint(touch.clientX, touch.clientY) as HTMLElement | null;
     if (el && el.dataset.day && el.dataset.slot) {
       const day = parseInt(el.dataset.day);
       const slot = parseInt(el.dataset.slot);
