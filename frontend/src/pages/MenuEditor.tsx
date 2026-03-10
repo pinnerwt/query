@@ -7,8 +7,8 @@ import { SkeletonList } from '../components/Skeleton';
 
 export default function MenuEditor({ id = '' }: RoutableProps & { id?: string }) {
   const rid = parseInt(id);
-  const [menu, setMenu] = useState<MenuData>({ categories: [], combos: [] });
-  const [savedMenu, setSavedMenu] = useState<MenuData>({ categories: [], combos: [] });
+  const [menu, setMenu] = useState<MenuData>({ categories: [] });
+  const [savedMenu, setSavedMenu] = useState<MenuData>({ categories: [] });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [ocrRunning, setOcrRunning] = useState(false);
@@ -28,7 +28,7 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
   useEffect(() => {
     getMenu(rid)
       .then((m) => {
-        const safe = { categories: m?.categories || [], combos: m?.combos || [] };
+        const safe = { categories: m?.categories || [] };
         setMenu(safe);
         setSavedMenu(safe);
       })
@@ -118,7 +118,8 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
 
   const handleUpload = (e: Event) => {
     const input = e.target as HTMLInputElement;
-    if (input.files?.length) doUpload(input.files);
+    const files = Array.from(input.files || []).filter((f) => f.type.startsWith('image/'));
+    if (files.length) doUpload(files);
     input.value = '';
   };
 
@@ -134,7 +135,7 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
     setMsg('OCR 辨識中，請稍候...');
     try {
       const result = await triggerOCR(rid);
-      const safe = { categories: result?.categories || [], combos: result?.combos || [] };
+      const safe = { categories: result?.categories || [] };
       setMenu(safe);
       setSavedMenu(safe);
       setMsg('OCR 完成！請檢查並修正菜單內容');
@@ -254,7 +255,7 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
               <p class="text-xs text-slate-400 mt-1">支援 JPG、PNG，可多選</p>
             </>
           )}
-          <input type="file" accept="image/*" multiple onChange={handleUpload} disabled={uploading} class="hidden" />
+          <input type="file" multiple onChange={handleUpload} disabled={uploading} class="hidden" />
         </label>
         {/* Thumbnails */}
         {photos.length > 0 && (
@@ -331,6 +332,121 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
                             <button onClick={() => setEditingItem(null)} class="text-xs text-amber-600 font-medium hover:text-amber-700">完成</button>
                             <button onClick={() => removeItem(ci, ii)} class="text-xs text-red-500 hover:text-red-600">刪除</button>
                           </div>
+                          {/* Option Groups */}
+                          {item.option_groups?.map((og, ogIdx) => (
+                            <div key={ogIdx} class="mt-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                              <div class="flex items-center gap-2 mb-2">
+                                <input
+                                  class={inputClass}
+                                  value={og.name}
+                                  placeholder="選項群組名稱"
+                                  onInput={(e) => {
+                                    const val = (e.target as HTMLInputElement).value;
+                                    setMenu((prev) => {
+                                      const cats = [...prev.categories];
+                                      const items = [...cats[ci].items];
+                                      const groups = [...(items[ii].option_groups || [])];
+                                      groups[ogIdx] = { ...groups[ogIdx], name: val };
+                                      items[ii] = { ...items[ii], option_groups: groups };
+                                      cats[ci] = { ...cats[ci], items };
+                                      return { ...prev, categories: cats };
+                                    });
+                                  }}
+                                />
+                                <span class="text-xs text-slate-400 whitespace-nowrap">
+                                  {og.min_choices === og.max_choices ? `選 ${og.min_choices}` : `${og.min_choices}-${og.max_choices}`}
+                                </span>
+                                <button
+                                  class="text-red-400 hover:text-red-600 text-sm"
+                                  onClick={() => {
+                                    setMenu((prev) => {
+                                      const cats = [...prev.categories];
+                                      const items = [...cats[ci].items];
+                                      const groups = (items[ii].option_groups || []).filter((_, i) => i !== ogIdx);
+                                      items[ii] = { ...items[ii], option_groups: groups.length ? groups : undefined };
+                                      cats[ci] = { ...cats[ci], items };
+                                      return { ...prev, categories: cats };
+                                    });
+                                  }}
+                                >✕</button>
+                              </div>
+                              <div class="flex flex-wrap gap-1">
+                                {og.options.map((opt, optIdx) => (
+                                  <span key={optIdx} class="inline-flex items-center gap-1 bg-white border border-slate-200 rounded px-2 py-0.5 text-sm">
+                                    <input
+                                      class="border-none bg-transparent text-sm w-20 p-0 focus:outline-none"
+                                      value={opt.name}
+                                      onInput={(e) => {
+                                        const val = (e.target as HTMLInputElement).value;
+                                        setMenu((prev) => {
+                                          const cats = [...prev.categories];
+                                          const items = [...cats[ci].items];
+                                          const groups = [...(items[ii].option_groups || [])];
+                                          const options = [...groups[ogIdx].options];
+                                          options[optIdx] = { ...options[optIdx], name: val };
+                                          groups[ogIdx] = { ...groups[ogIdx], options };
+                                          items[ii] = { ...items[ii], option_groups: groups };
+                                          cats[ci] = { ...cats[ci], items };
+                                          return { ...prev, categories: cats };
+                                        });
+                                      }}
+                                    />
+                                    {opt.price_adjustment !== 0 && (
+                                      <span class="text-xs text-amber-600">+{opt.price_adjustment}</span>
+                                    )}
+                                    <button
+                                      class="text-red-300 hover:text-red-500 text-xs"
+                                      onClick={() => {
+                                        setMenu((prev) => {
+                                          const cats = [...prev.categories];
+                                          const items = [...cats[ci].items];
+                                          const groups = [...(items[ii].option_groups || [])];
+                                          const options = groups[ogIdx].options.filter((_, i) => i !== optIdx);
+                                          groups[ogIdx] = { ...groups[ogIdx], options };
+                                          items[ii] = { ...items[ii], option_groups: groups };
+                                          cats[ci] = { ...cats[ci], items };
+                                          return { ...prev, categories: cats };
+                                        });
+                                      }}
+                                    >✕</button>
+                                  </span>
+                                ))}
+                                <button
+                                  class="text-xs text-amber-600 hover:text-amber-700 px-2 py-0.5 border border-dashed border-amber-300 rounded"
+                                  onClick={() => {
+                                    setMenu((prev) => {
+                                      const cats = [...prev.categories];
+                                      const items = [...cats[ci].items];
+                                      const groups = [...(items[ii].option_groups || [])];
+                                      const options = [...groups[ogIdx].options, { name: "", price_adjustment: 0 }];
+                                      groups[ogIdx] = { ...groups[ogIdx], options };
+                                      items[ii] = { ...items[ii], option_groups: groups };
+                                      cats[ci] = { ...cats[ci], items };
+                                      return { ...prev, categories: cats };
+                                    });
+                                  }}
+                                >+ 選項</button>
+                              </div>
+                            </div>
+                          ))}
+                          <button
+                            class="text-xs text-slate-400 hover:text-slate-600 mt-2"
+                            onClick={() => {
+                              setMenu((prev) => {
+                                const cats = [...prev.categories];
+                                const items = [...cats[ci].items];
+                                const groups = [...(items[ii].option_groups || []), {
+                                  name: "",
+                                  min_choices: 1,
+                                  max_choices: 1,
+                                  options: [{ name: "", price_adjustment: 0 }],
+                                }];
+                                items[ii] = { ...items[ii], option_groups: groups };
+                                cats[ci] = { ...cats[ci], items };
+                                return { ...prev, categories: cats };
+                              });
+                            }}
+                          >+ 選項群組</button>
                         </div>
                       ) : (
                         /* Read mode */
@@ -340,7 +456,10 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
                         >
                           <span class="item-handle text-slate-200 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>⠿</span>
                           <div class="flex-1 min-w-0">
-                            <p class="text-sm font-medium text-slate-800 truncate">{item.name}</p>
+                            <p class="text-sm font-medium text-slate-800 truncate">
+                              {item.name}
+                              {item.option_groups?.length ? <span class="text-xs text-amber-500 ml-2">({item.option_groups.length} 選項群組)</span> : null}
+                            </p>
                             {item.description && <p class="text-xs text-slate-400 truncate">{item.description}</p>}
                           </div>
                           <span class="text-sm font-medium text-slate-700 tabular-nums">${item.price}</span>
