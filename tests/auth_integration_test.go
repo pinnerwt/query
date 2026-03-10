@@ -60,7 +60,7 @@ func TestAuthIntegration(t *testing.T) {
 		assert.NotEmpty(t, token)
 
 		// Validate token
-		ownerID, err := auth.ValidateToken(token, secret)
+		ownerID, _, err := auth.ValidateToken(token, secret)
 		require.NoError(t, err)
 		assert.Equal(t, found.ID, ownerID)
 
@@ -144,7 +144,7 @@ func TestAuthIntegration(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify token works
-		id, err := auth.ValidateToken(token, secret)
+		id, _, err := auth.ValidateToken(token, secret)
 		require.NoError(t, err)
 		assert.Equal(t, owner.ID, id)
 	})

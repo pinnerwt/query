@@ -30,9 +30,10 @@ func TestGenerateAndValidateToken(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, token)
 
-	ownerID, err := ValidateToken(token, secret)
+	ownerID, iat, err := ValidateToken(token, secret)
 	require.NoError(t, err)
 	assert.Equal(t, int64(42), ownerID)
+	assert.WithinDuration(t, time.Now(), iat, 2*time.Second)
 }
 
 func TestValidateToken_expired(t *testing.T) {
@@ -41,7 +42,7 @@ func TestValidateToken_expired(t *testing.T) {
 	token, err := GenerateToken(1, secret, -1*time.Hour)
 	require.NoError(t, err)
 
-	_, err = ValidateToken(token, secret)
+	_, _, err = ValidateToken(token, secret)
 	assert.Error(t, err)
 }
 
@@ -49,7 +50,7 @@ func TestValidateToken_wrongSecret(t *testing.T) {
 	token, err := GenerateToken(1, []byte("secret1"), 24*time.Hour)
 	require.NoError(t, err)
 
-	_, err = ValidateToken(token, []byte("secret2"))
+	_, _, err = ValidateToken(token, []byte("secret2"))
 	assert.Error(t, err)
 }
 
@@ -96,8 +97,8 @@ func TestTokenRotation(t *testing.T) {
 	oldToken, err := GenerateToken(42, secret, 24*time.Hour)
 	require.NoError(t, err)
 
-	// Verify TokenIssuedAt works
-	iat, err := TokenIssuedAt(oldToken, secret)
+	// Verify ValidateToken returns iat
+	_, iat, err := ValidateToken(oldToken, secret)
 	require.NoError(t, err)
 	assert.WithinDuration(t, time.Now(), iat, 2*time.Second)
 

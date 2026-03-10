@@ -23,18 +23,16 @@ func Middleware(secret []byte, secure bool, next http.Handler) http.Handler {
 		}
 
 		tokenStr := cookie.Value
-		ownerID, err := ValidateToken(tokenStr, secret)
+		ownerID, iat, err := ValidateToken(tokenStr, secret)
 		if err != nil {
 			http.Error(w, `{"error":"invalid session"}`, http.StatusUnauthorized)
 			return
 		}
 
 		// Rotate token if older than rotationInterval
-		if iat, err := TokenIssuedAt(tokenStr, secret); err == nil {
-			if time.Since(iat) > rotationInterval {
-				if newToken, err := GenerateToken(ownerID, secret, 24*time.Hour); err == nil {
-					SetSessionCookie(w, newToken, secure)
-				}
+		if !iat.IsZero() && time.Since(iat) > rotationInterval {
+			if newToken, err := GenerateToken(ownerID, secret, tokenExpiry); err == nil {
+				SetSessionCookie(w, newToken, secure)
 			}
 		}
 
