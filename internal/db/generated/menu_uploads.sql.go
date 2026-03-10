@@ -38,6 +38,15 @@ func (q *Queries) CreateMenuPhotoUpload(ctx context.Context, arg CreateMenuPhoto
 	return i, err
 }
 
+const deleteMenuPhotoUploadByID = `-- name: DeleteMenuPhotoUploadByID :exec
+DELETE FROM menu_photo_uploads WHERE id = $1
+`
+
+func (q *Queries) DeleteMenuPhotoUploadByID(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deleteMenuPhotoUploadByID, id)
+	return err
+}
+
 const deleteMenuPhotoUploadsByRestaurant = `-- name: DeleteMenuPhotoUploadsByRestaurant :exec
 DELETE FROM menu_photo_uploads WHERE restaurant_id = $1
 `
@@ -45,6 +54,25 @@ DELETE FROM menu_photo_uploads WHERE restaurant_id = $1
 func (q *Queries) DeleteMenuPhotoUploadsByRestaurant(ctx context.Context, restaurantID int64) error {
 	_, err := q.db.Exec(ctx, deleteMenuPhotoUploadsByRestaurant, restaurantID)
 	return err
+}
+
+const getMenuPhotoUploadByID = `-- name: GetMenuPhotoUploadByID :one
+SELECT id, restaurant_id, file_path, file_name, ocr_status, ocr_text, created_at FROM menu_photo_uploads WHERE id = $1
+`
+
+func (q *Queries) GetMenuPhotoUploadByID(ctx context.Context, id int64) (MenuPhotoUpload, error) {
+	row := q.db.QueryRow(ctx, getMenuPhotoUploadByID, id)
+	var i MenuPhotoUpload
+	err := row.Scan(
+		&i.ID,
+		&i.RestaurantID,
+		&i.FilePath,
+		&i.FileName,
+		&i.OcrStatus,
+		&i.OcrText,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const listMenuPhotoUploadsByRestaurant = `-- name: ListMenuPhotoUploadsByRestaurant :many

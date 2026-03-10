@@ -109,8 +109,13 @@ func main() {
 	mux.Handle("PUT /api/restaurants/{id}/menu", auth.Middleware(secretBytes, http.HandlerFunc(s.handleReplaceMenu)))
 
 	// Photo upload + OCR (auth required)
+	mux.Handle("GET /api/restaurants/{id}/menu-photos", auth.Middleware(secretBytes, http.HandlerFunc(s.handleListPhotos)))
 	mux.Handle("POST /api/restaurants/{id}/menu-photos", auth.Middleware(secretBytes, http.HandlerFunc(s.handleUploadPhotos)))
+	mux.Handle("DELETE /api/restaurants/{id}/menu-photos/{photoId}", auth.Middleware(secretBytes, http.HandlerFunc(s.handleDeletePhoto)))
 	mux.Handle("POST /api/restaurants/{id}/ocr", auth.Middleware(secretBytes, http.HandlerFunc(s.handleOCR)))
+
+	// Serve uploaded menu photos
+	mux.Handle("GET /uploads/menu-photos/", http.StripPrefix("/uploads/menu-photos/", http.FileServer(http.Dir(s.photosDir))))
 
 	// QR code (auth required)
 	mux.Handle("GET /api/restaurants/{id}/qr", auth.Middleware(secretBytes, http.HandlerFunc(s.handleQR)))
@@ -603,6 +608,34 @@ func (s *server) handleReplaceMenu(w http.ResponseWriter, r *http.Request) {
 
 // --- Photo upload + OCR ---
 
+func (s *server) handleListPhotos(w http.ResponseWriter, r *http.Request) {
+	ownerID, _ := auth.OwnerIDFromContext(r.Context())
+	id, err := parseID(r, "id")
+	if err != nil {
+		jsonError(w, "invalid id", 400)
+		return
+	}
+	rest, err := s.q.GetRestaurantByID(r.Context(), id)
+	if err != nil || rest.OwnerID != ownerID {
+		jsonError(w, "not found or forbidden", 404)
+		return
+	}
+	uploads, err := s.q.ListMenuPhotoUploadsByRestaurant(r.Context(), id)
+	if err != nil {
+		jsonError(w, "internal error", 500)
+		return
+	}
+	out := make([]map[string]interface{}, 0, len(uploads))
+	for _, u := range uploads {
+		out = append(out, map[string]interface{}{
+			"id":        u.ID,
+			"file_name": u.FileName,
+			"url":       fmt.Sprintf("/uploads/menu-photos/%d/%s", id, u.FileName),
+		})
+	}
+	jsonResp(w, 200, map[string]interface{}{"photos": out})
+}
+
 func (s *server) handleUploadPhotos(w http.ResponseWriter, r *http.Request) {
 	ownerID, _ := auth.OwnerIDFromContext(r.Context())
 	id, err := parseID(r, "id")
@@ -649,6 +682,36 @@ func (s *server) handleUploadPhotos(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonResp(w, 201, map[string]interface{}{"uploads": uploads})
+}
+
+func (s *server) handleDeletePhoto(w http.ResponseWriter, r *http.Request) {
+	ownerID, _ := auth.OwnerIDFromContext(r.Context())
+	id, err := parseID(r, "id")
+	if err != nil {
+		jsonError(w, "invalid id", 400)
+		return
+	}
+	rest, err := s.q.GetRestaurantByID(r.Context(), id)
+	if err != nil || rest.OwnerID != ownerID {
+		jsonError(w, "not found or forbidden", 404)
+		return
+	}
+	photoID, err := parseID(r, "photoId")
+	if err != nil {
+		jsonError(w, "invalid photo id", 400)
+		return
+	}
+	upload, err := s.q.GetMenuPhotoUploadByID(r.Context(), photoID)
+	if err != nil || upload.RestaurantID != id {
+		jsonError(w, "photo not found", 404)
+		return
+	}
+	os.Remove(upload.FilePath)
+	if err := s.q.DeleteMenuPhotoUploadByID(r.Context(), photoID); err != nil {
+		jsonError(w, "internal error", 500)
+		return
+	}
+	w.WriteHeader(204)
 }
 
 func (s *server) handleOCR(w http.ResponseWriter, r *http.Request) {

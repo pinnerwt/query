@@ -296,3 +296,45 @@ func TestMenuBulkReplace(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, items, 2)
 }
+
+func TestMenuPhotoDeleteByID(t *testing.T) {
+	conn := dbtest.SetupTestDB(t)
+	ctx := context.Background()
+	q := db.New(conn)
+	rest := createTestRestaurant(t, ctx, q)
+
+	// Create two photos
+	p1, err := q.CreateMenuPhotoUpload(ctx, db.CreateMenuPhotoUploadParams{
+		RestaurantID: rest.ID,
+		FilePath:     "/tmp/photo1.jpg",
+		FileName:     "photo1.jpg",
+	})
+	require.NoError(t, err)
+	p2, err := q.CreateMenuPhotoUpload(ctx, db.CreateMenuPhotoUploadParams{
+		RestaurantID: rest.ID,
+		FilePath:     "/tmp/photo2.jpg",
+		FileName:     "photo2.jpg",
+	})
+	require.NoError(t, err)
+
+	// GetMenuPhotoUploadByID returns the correct photo
+	got, err := q.GetMenuPhotoUploadByID(ctx, p1.ID)
+	require.NoError(t, err)
+	assert.Equal(t, p1.ID, got.ID)
+	assert.Equal(t, "photo1.jpg", got.FileName)
+	assert.Equal(t, rest.ID, got.RestaurantID)
+
+	// Delete first photo by ID
+	err = q.DeleteMenuPhotoUploadByID(ctx, p1.ID)
+	require.NoError(t, err)
+
+	// Verify only second photo remains
+	photos, err := q.ListMenuPhotoUploadsByRestaurant(ctx, rest.ID)
+	require.NoError(t, err)
+	assert.Len(t, photos, 1)
+	assert.Equal(t, p2.ID, photos[0].ID)
+
+	// GetMenuPhotoUploadByID on deleted photo returns error
+	_, err = q.GetMenuPhotoUploadByID(ctx, p1.ID)
+	assert.Error(t, err)
+}

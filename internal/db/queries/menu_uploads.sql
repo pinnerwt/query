@@ -11,5 +11,11 @@ UPDATE menu_photo_uploads SET ocr_status = @ocr_status, ocr_text = @ocr_text
 WHERE id = @id
 RETURNING *;
 
+-- name: GetMenuPhotoUploadByID :one
+SELECT * FROM menu_photo_uploads WHERE id = $1;
+
+-- name: DeleteMenuPhotoUploadByID :exec
+DELETE FROM menu_photo_uploads WHERE id = $1;
+
 -- name: DeleteMenuPhotoUploadsByRestaurant :exec
 DELETE FROM menu_photo_uploads WHERE restaurant_id = $1;

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
-import { getMenu, saveMenu, uploadPhotos, triggerOCR } from '../lib/api';
-import type { MenuData, MenuCategory, MenuItem } from '../lib/api';
+import { getMenu, saveMenu, uploadPhotos, triggerOCR, listMenuPhotos, deleteMenuPhoto } from '../lib/api';
+import type { MenuData, MenuCategory, MenuItem, MenuPhoto } from '../lib/api';
 import type { RoutableProps } from '../lib/route';
 import Sortable from 'sortablejs';
 import { SkeletonList } from '../components/Skeleton';
@@ -13,6 +13,10 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
   const [saving, setSaving] = useState(false);
   const [ocrRunning, setOcrRunning] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadPct, setUploadPct] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
+  const [photos, setPhotos] = useState<MenuPhoto[]>([]);
+  const [deletingPhotoId, setDeletingPhotoId] = useState<number | null>(null);
   const [msg, setMsg] = useState('');
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
   const [editingItem, setEditingItem] = useState<string | null>(null); // "catIdx-itemIdx"
@@ -30,6 +34,7 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
       })
       .catch(() => {})
       .finally(() => setLoading(false));
+    listMenuPhotos(rid).then(setPhotos).catch(() => {});
   }, [rid]);
 
   // Category drag-and-drop
@@ -95,19 +100,33 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
     setEditingItem(null);
   };
 
-  const handleUpload = async (e: Event) => {
-    const input = e.target as HTMLInputElement;
-    if (!input.files?.length) return;
+  const doUpload = async (files: FileList | File[]) => {
+    if (!files.length || uploading) return;
     setUploading(true);
+    setUploadPct(0);
     try {
-      await uploadPhotos(rid, input.files);
+      await uploadPhotos(rid, files, setUploadPct);
+      listMenuPhotos(rid).then(setPhotos).catch(() => {});
       setMsg('照片上傳成功');
       setTimeout(() => setMsg(''), 3000);
     } catch (err: any) {
       setMsg('上傳失敗: ' + err.message);
     }
     setUploading(false);
+    setUploadPct(0);
+  };
+
+  const handleUpload = (e: Event) => {
+    const input = e.target as HTMLInputElement;
+    if (input.files?.length) doUpload(input.files);
     input.value = '';
+  };
+
+  const handleDrop = (e: DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const files = Array.from(e.dataTransfer?.files || []).filter((f) => f.type.startsWith('image/'));
+    if (files.length) doUpload(files);
   };
 
   const handleOCR = async () => {
@@ -123,6 +142,18 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
       setMsg('OCR 失敗: ' + err.message);
     }
     setOcrRunning(false);
+  };
+
+  const handleDeletePhoto = async (photoId: number) => {
+    if (!confirm('確定要刪除這張照片嗎？')) return;
+    setDeletingPhotoId(photoId);
+    try {
+      await deleteMenuPhoto(rid, photoId);
+      setPhotos(prev => prev.filter(p => p.id !== photoId));
+    } catch (err: any) {
+      setMsg('刪除失敗: ' + err.message);
+    }
+    setDeletingPhotoId(null);
   };
 
   const addCategory = () => {
@@ -198,18 +229,58 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
       {/* Photo upload + OCR */}
       <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 mb-6">
         <h2 class="font-semibold text-slate-800 mb-3">照片辨識菜單</h2>
-        <label class={`block border-2 border-dashed rounded-xl p-8 text-center transition-colors ${uploading ? 'border-amber-300 bg-amber-50/50' : 'border-slate-200 hover:border-amber-400 hover:bg-amber-50/30 cursor-pointer'}`}>
-          <div class="text-3xl mb-2">📷</div>
-          <p class="font-medium text-slate-700 text-sm">{uploading ? '上傳中...' : '點擊選擇菜單照片'}</p>
-          <p class="text-xs text-slate-400 mt-1">支援 JPG、PNG，可多選</p>
+        <label
+          class={`block border-2 border-dashed rounded-xl p-8 text-center transition-colors ${
+            dragOver ? 'border-amber-500 bg-amber-50/50' :
+            uploading ? 'border-amber-300 bg-amber-50/50' :
+            'border-slate-200 hover:border-amber-400 hover:bg-amber-50/30 cursor-pointer'
+          }`}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragEnter={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+        >
+          {uploading ? (
+            <>
+              <div class="w-48 mx-auto bg-slate-200 rounded-full h-2 mb-3">
+                <div class="bg-amber-500 h-2 rounded-full transition-all" style={{ width: `${uploadPct}%` }} />
+              </div>
+              <p class="font-medium text-slate-700 text-sm">上傳中 {uploadPct}%</p>
+            </>
+          ) : (
+            <>
+              <div class="text-3xl mb-2">{dragOver ? '📥' : '📷'}</div>
+              <p class="font-medium text-slate-700 text-sm">{dragOver ? '放開以上傳' : '點擊選擇或拖曳照片至此'}</p>
+              <p class="text-xs text-slate-400 mt-1">支援 JPG、PNG，可多選</p>
+            </>
+          )}
           <input type="file" accept="image/*" multiple onChange={handleUpload} disabled={uploading} class="hidden" />
         </label>
+        {/* Thumbnails */}
+        {photos.length > 0 && (
+          <div class="mt-4 grid grid-cols-4 sm:grid-cols-6 gap-2">
+            {photos.map((p) => (
+              <div key={p.id} class="relative group aspect-square rounded-lg overflow-hidden border border-slate-200 hover:border-amber-400 transition-colors">
+                <a href={p.url} target="_blank" class="block w-full h-full">
+                  <img src={p.url} alt={p.file_name} class="w-full h-full object-cover" loading="lazy" />
+                </a>
+                <button
+                  onClick={() => handleDeletePhoto(p.id)}
+                  disabled={deletingPhotoId === p.id}
+                  class="absolute top-1 right-1 w-6 h-6 bg-black/60 hover:bg-red-600 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
+                >
+                  {deletingPhotoId === p.id ? '...' : '✕'}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <button
           onClick={handleOCR}
-          disabled={ocrRunning}
+          disabled={ocrRunning || photos.length === 0}
           class="mt-3 w-full bg-slate-800 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-700 disabled:opacity-50 transition-colors"
         >
-          {ocrRunning ? '辨識中...' : '開始 OCR 辨識'}
+          {ocrRunning ? '辨識中...' : `開始 OCR 辨識${photos.length > 0 ? ` (${photos.length} 張)` : ''}`}
         </button>
       </div>
 

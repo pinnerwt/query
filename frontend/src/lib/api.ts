@@ -195,19 +195,46 @@ export const saveMenu = (id: number, menu: MenuData) =>
   });
 
 // Photos / OCR
-export const uploadPhotos = (id: number, files: FileList) => {
+export const uploadPhotos = (
+  id: number,
+  files: FileList | File[],
+  onProgress?: (pct: number) => void,
+): Promise<unknown> => {
   const form = new FormData();
   for (let i = 0; i < files.length; i++) form.append('photos', files[i]);
   const token = localStorage.getItem('token');
-  return fetch(`${BASE}/restaurants/${id}/menu-photos`, {
-    method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: form,
-  }).then(async (r) => {
-    if (!r.ok) throw new Error(await r.text());
-    return r.json();
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${BASE}/restaurants/${id}/menu-photos`);
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    if (onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+      };
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(JSON.parse(xhr.responseText));
+      } else {
+        reject(new Error(xhr.responseText || xhr.statusText));
+      }
+    };
+    xhr.onerror = () => reject(new Error('網路錯誤'));
+    xhr.send(form);
   });
 };
+
+export interface MenuPhoto {
+  id: number;
+  file_name: string;
+  url: string;
+}
+
+export const listMenuPhotos = (id: number) =>
+  request<{ photos: MenuPhoto[] }>(`/restaurants/${id}/menu-photos`).then((r) => r.photos);
+
+export const deleteMenuPhoto = (restaurantId: number, photoId: number) =>
+  request<void>(`/restaurants/${restaurantId}/menu-photos/${photoId}`, { method: 'DELETE' });
 
 export const triggerOCR = (id: number) =>
   request<MenuData>(`/restaurants/${id}/ocr`, { method: 'POST' });
