@@ -119,8 +119,22 @@ Go 1.25.0 project — an owner-facing restaurant menu platform backed by Postgre
 - `internal/ocr/` — OCR pipeline (types, image processing, normalization, menu DB insertion). Extracted from cmd/ocr for reuse by server.
 - `internal/storage/` — File upload handling (saves to `menu_photos/{restaurant_id}/`)
 - `internal/seed/` — Google Places API client, grid sweep logic, geo helpers
-- `frontend/` — Preact + Vite + Tailwind CSS + TypeScript SPA. Pages: Login/Register, Dashboard, Restaurant Edit, Menu Editor (with OCR), Orders. Built to `frontend/dist/`, embedded in Go binary via `frontend_embed.go`.
+- `frontend/` — Preact + Vite + Tailwind CSS 4 + TypeScript SPA with SortableJS for drag-and-drop. Built to `frontend/dist/`, embedded in Go binary via `frontend_embed.go`.
+  - `frontend/src/app.tsx` — Root component: AuthProvider → Login (unauthenticated) or Layout + Router (authenticated)
+  - `frontend/src/lib/api.ts` — Fetch wrapper, all API calls, type definitions
+  - `frontend/src/lib/auth.tsx` — AuthContext provider (token in localStorage, JWT validation)
+  - `frontend/src/components/Layout.tsx` — App shell: dark sidebar (`bg-slate-900`, w-60) with context-aware nav, mobile drawer, user profile. Wraps all authenticated routes.
+  - `frontend/src/components/Toggle.tsx` — Toggle switch (replaces checkboxes)
+  - `frontend/src/components/Modal.tsx` — Modal dialog with backdrop blur
+  - `frontend/src/components/Skeleton.tsx` — SkeletonCard and SkeletonList loading placeholders
+  - `frontend/src/pages/Login.tsx` — Split layout: amber gradient brand panel (desktop) + form card
+  - `frontend/src/pages/Dashboard.tsx` — Restaurant card grid, stats bar, create modal
+  - `frontend/src/pages/RestaurantEdit.tsx` — Sectioned form cards, toggle switches, publish banner, QR card
+  - `frontend/src/pages/MenuEditor.tsx` — Accordion categories, inline edit (click to expand), SortableJS drag-and-drop, dashed drop zone for photo upload, floating save bar on dirty state
+  - `frontend/src/pages/Orders.tsx` — Kanban board (4 columns, desktop) / filter tabs + list (mobile), relative timestamps, pulsing live indicator
 - `frontend_embed.go` — Root package file with `//go:embed frontend/dist` directive
+
+**Frontend design system**: Amber primary (`amber-600`), stone-50 body background, slate-900 sidebar, emerald for success/published states. Cards use `rounded-xl shadow-sm border-slate-100`. Inputs use `rounded-lg` with `focus:ring-2 focus:ring-amber-500/20`. All pages use functional setState to prevent stale closures, and async buttons are disabled during requests.
 
 **Server endpoints** (`cmd/server/main.go`):
 - Auth: `POST /api/auth/register` (rate-limited), `POST /api/auth/login`, `GET /api/auth/me`
