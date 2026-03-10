@@ -1,30 +1,43 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { route } from 'preact-router';
 import { listOrders, updateOrderStatus } from '../lib/api';
 import type { Order } from '../lib/api';
 import type { RoutableProps } from '../lib/route';
+import { SkeletonList } from '../components/Skeleton';
 
 const STATUS_LABELS: Record<string, string> = {
-  pending: '待確認',
-  confirmed: '已確認',
-  preparing: '準備中',
-  completed: '已完成',
-  cancelled: '已取消',
+  pending: '待確認', confirmed: '已確認', preparing: '準備中', completed: '已完成', cancelled: '已取消',
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  pending: 'bg-yellow-100 text-yellow-800',
-  confirmed: 'bg-blue-100 text-blue-800',
-  preparing: 'bg-orange-100 text-orange-800',
-  completed: 'bg-green-100 text-green-800',
-  cancelled: 'bg-red-100 text-red-800',
+  pending: 'border-l-yellow-400', confirmed: 'border-l-blue-400',
+  preparing: 'border-l-orange-400', completed: 'border-l-emerald-400',
+};
+
+const COLUMN_BADGE: Record<string, string> = {
+  pending: 'bg-yellow-100 text-yellow-800', confirmed: 'bg-blue-100 text-blue-800',
+  preparing: 'bg-orange-100 text-orange-800', completed: 'bg-emerald-100 text-emerald-800',
+};
+
+const ACTION_COLORS: Record<string, string> = {
+  pending: 'bg-amber-600 hover:bg-amber-700', confirmed: 'bg-blue-600 hover:bg-blue-700',
+  preparing: 'bg-emerald-600 hover:bg-emerald-700',
 };
 
 const NEXT_STATUS: Record<string, string> = {
-  pending: 'confirmed',
-  confirmed: 'preparing',
-  preparing: 'completed',
+  pending: 'confirmed', confirmed: 'preparing', preparing: 'completed',
 };
+
+const KANBAN_COLUMNS = ['pending', 'confirmed', 'preparing', 'completed'] as const;
+
+function relativeTime(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return '剛剛';
+  if (mins < 60) return `${mins} 分鐘前`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} 小時前`;
+  return `${Math.floor(hours / 24)} 天前`;
+}
 
 export default function Orders({ id = '' }: RoutableProps & { id?: string }) {
   const rid = parseInt(id);
@@ -35,7 +48,7 @@ export default function Orders({ id = '' }: RoutableProps & { id?: string }) {
   const timerRef = useRef<ReturnType<typeof setInterval>>();
 
   const load = () => {
-    listOrders(rid, filter)
+    listOrders(rid)
       .then(setOrders)
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -45,7 +58,7 @@ export default function Orders({ id = '' }: RoutableProps & { id?: string }) {
     load();
     timerRef.current = setInterval(load, 10000);
     return () => clearInterval(timerRef.current);
-  }, [rid, filter]);
+  }, [rid]);
 
   const advance = async (order: Order) => {
     const next = NEXT_STATUS[order.status];
@@ -71,84 +84,98 @@ export default function Orders({ id = '' }: RoutableProps & { id?: string }) {
     }
   };
 
-  return (
-    <div class="max-w-2xl mx-auto p-4">
-      <button
-        onClick={() => route(`/app/restaurants/${rid}`)}
-        class="text-blue-600 text-sm mb-4 inline-block"
-      >
-        &larr; 返回
-      </button>
+  const ordersByStatus = (status: string) => orders.filter((o) => o.status === status);
 
-      <h1 class="text-2xl font-bold mb-4">訂單管理</h1>
+  // Mobile: filtered list
+  const filteredOrders = filter ? orders.filter((o) => o.status === filter) : orders;
 
-      <div class="flex gap-2 mb-4 flex-wrap">
-        {['', 'pending', 'confirmed', 'preparing', 'completed', 'cancelled'].map((s) => (
-          <button
-            key={s}
-            onClick={() => setFilter(s)}
-            class={`px-3 py-1 rounded text-sm ${
-              filter === s ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200'
-            }`}
-          >
-            {s === '' ? '全部' : STATUS_LABELS[s]}
-          </button>
-        ))}
+  const renderOrderCard = (o: Order, compact = false) => (
+    <div key={o.id} class={`bg-white rounded-lg shadow-sm border-l-4 ${STATUS_COLORS[o.status] || 'border-l-slate-200'} border border-slate-100 p-3`}>
+      <div class="flex items-center justify-between mb-2">
+        <span class="font-mono text-xs text-slate-400">#{o.id}</span>
+        <span class="text-xs text-slate-400">{relativeTime(o.created_at)}</span>
       </div>
-
-      {loading ? (
-        <p class="text-gray-500">載入中...</p>
-      ) : orders.length === 0 ? (
-        <p class="text-gray-400">沒有訂單</p>
-      ) : (
-        <div class="space-y-3">
-          {orders.map((o) => (
-            <div key={o.id} class="border rounded p-4">
-              <div class="flex justify-between items-start mb-2">
-                <div>
-                  <span class="font-mono text-sm text-gray-500">#{o.id}</span>
-                  {o.table_label && (
-                    <span class="ml-2 bg-gray-100 px-2 py-0.5 rounded text-sm">
-                      {o.table_label}
-                    </span>
-                  )}
-                </div>
-                <span
-                  class={`px-2 py-0.5 rounded text-xs font-medium ${
-                    STATUS_COLORS[o.status] || ''
-                  }`}
-                >
-                  {STATUS_LABELS[o.status] || o.status}
-                </span>
-              </div>
-              <p class="text-lg font-bold mb-1">${o.total_amount} 元</p>
-              <p class="text-xs text-gray-400 mb-2">
-                {new Date(o.created_at).toLocaleString('zh-TW')}
-              </p>
-              <div class="flex gap-2">
-                {NEXT_STATUS[o.status] && (
-                  <button
-                    onClick={() => advance(o)}
-                    disabled={updatingId === o.id}
-                    class="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    {updatingId === o.id ? '處理中...' : STATUS_LABELS[NEXT_STATUS[o.status]]}
-                  </button>
-                )}
-                {o.status !== 'completed' && o.status !== 'cancelled' && (
-                  <button
-                    onClick={() => cancel(o)}
-                    disabled={updatingId === o.id}
-                    class="text-red-600 border border-red-300 px-3 py-1 rounded text-sm hover:bg-red-50 disabled:opacity-50"
-                  >
-                    取消
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
+      {o.table_label && <p class="text-sm font-medium text-slate-800 mb-1">桌號 {o.table_label}</p>}
+      <p class={`font-bold text-slate-800 ${compact ? 'text-base' : 'text-lg'}`}>${o.total_amount} 元</p>
+      {!compact && o.status !== 'completed' && o.status !== 'cancelled' && (
+        <div class="flex gap-2 mt-3">
+          {NEXT_STATUS[o.status] && (
+            <button
+              onClick={() => advance(o)}
+              disabled={updatingId === o.id}
+              class={`flex-1 text-white text-xs py-1.5 rounded-lg font-medium disabled:opacity-50 transition-colors ${ACTION_COLORS[o.status]}`}
+            >
+              {updatingId === o.id ? '...' : STATUS_LABELS[NEXT_STATUS[o.status]]}
+            </button>
+          )}
+          <button
+            onClick={() => cancel(o)}
+            disabled={updatingId === o.id}
+            class="text-xs text-red-500 hover:text-red-600 px-2 disabled:opacity-50"
+          >
+            取消
+          </button>
         </div>
       )}
+    </div>
+  );
+
+  if (loading) return <div class="max-w-5xl mx-auto"><SkeletonList rows={4} /></div>;
+
+  return (
+    <div class="max-w-5xl mx-auto">
+      <div class="flex items-center gap-3 mb-6">
+        <h1 class="text-2xl font-bold text-slate-800 tracking-tight">訂單管理</h1>
+        {/* Pulsing live indicator */}
+        <span class="relative flex h-2.5 w-2.5">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+          <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
+        </span>
+        <span class="text-xs text-slate-400">即時更新</span>
+      </div>
+
+      {/* Desktop: Kanban board */}
+      <div class="hidden lg:grid lg:grid-cols-4 gap-4" style="height: calc(100vh - 10rem)">
+        {KANBAN_COLUMNS.map((status) => {
+          const col = ordersByStatus(status);
+          return (
+            <div key={status} class="flex flex-col bg-slate-50 rounded-xl overflow-hidden">
+              <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                <h3 class="font-semibold text-sm text-slate-700">{STATUS_LABELS[status]}</h3>
+                <span class={`text-xs font-bold px-2 py-0.5 rounded-full ${COLUMN_BADGE[status]}`}>{col.length}</span>
+              </div>
+              <div class="flex-1 overflow-y-auto p-3 space-y-2">
+                {col.length === 0 && <p class="text-xs text-slate-400 text-center py-4">沒有訂單</p>}
+                {col.map((o) => renderOrderCard(o))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Mobile: filter tabs + list */}
+      <div class="lg:hidden">
+        <div class="flex gap-2 mb-4 flex-wrap">
+          {['', ...KANBAN_COLUMNS, 'cancelled'].map((s) => (
+            <button
+              key={s}
+              onClick={() => setFilter(s)}
+              class={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                filter === s ? 'bg-amber-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              {s === '' ? '全部' : STATUS_LABELS[s]}
+            </button>
+          ))}
+        </div>
+        {filteredOrders.length === 0 ? (
+          <p class="text-slate-400 text-center py-8">沒有訂單</p>
+        ) : (
+          <div class="space-y-2">
+            {filteredOrders.map((o) => renderOrderCard(o))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
