@@ -83,18 +83,14 @@ func TestMigration006OwnerApp(t *testing.T) {
 		`, restID)
 		require.NoError(t, err)
 
-		// Should succeed: combo_meals references restaurants
-		_, err = conn.Exec(ctx, `
-			INSERT INTO combo_meals (restaurant_id, name, price)
-			VALUES ($1, '套餐', 200)
-		`, restID)
+		// Should succeed: menu_item_option_groups references menu_items
+		var itemID int64
+		err = conn.QueryRow(ctx, `SELECT id FROM menu_items WHERE restaurant_id = $1 LIMIT 1`, restID).Scan(&itemID)
 		require.NoError(t, err)
-
-		// Should succeed: add_ons references restaurants
 		_, err = conn.Exec(ctx, `
-			INSERT INTO add_ons (restaurant_id, name, price)
-			VALUES ($1, '加蛋', 15)
-		`, restID)
+			INSERT INTO menu_item_option_groups (menu_item_id, name, min_choices, max_choices, sort_order)
+			VALUES ($1, '辣度', 1, 1, 0)
+		`, itemID)
 		require.NoError(t, err)
 
 		// FK to non-existent restaurant should fail
