@@ -1,35 +1,94 @@
-import { useState, useEffect } from 'preact/hooks';
-import { route } from 'preact-router';
+import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import { getMenu, saveMenu, uploadPhotos, triggerOCR } from '../lib/api';
 import type { MenuData, MenuCategory, MenuItem } from '../lib/api';
 import type { RoutableProps } from '../lib/route';
+import Sortable from 'sortablejs';
+import { SkeletonList } from '../components/Skeleton';
 
 export default function MenuEditor({ id = '' }: RoutableProps & { id?: string }) {
   const rid = parseInt(id);
   const [menu, setMenu] = useState<MenuData>({ categories: [], combos: [] });
+  const [savedMenu, setSavedMenu] = useState<MenuData>({ categories: [], combos: [] });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [ocrRunning, setOcrRunning] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [msg, setMsg] = useState('');
+  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  const [editingItem, setEditingItem] = useState<string | null>(null); // "catIdx-itemIdx"
+  const categoriesRef = useRef<HTMLDivElement>(null);
+  const sortableRefs = useRef<Map<number, Sortable>>(new Map());
+
+  const isDirty = JSON.stringify(menu) !== JSON.stringify(savedMenu);
 
   useEffect(() => {
     getMenu(rid)
-      .then(setMenu)
+      .then((m) => { setMenu(m); setSavedMenu(m); })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [rid]);
+
+  // Category drag-and-drop
+  useEffect(() => {
+    if (!categoriesRef.current || loading) return;
+    const s = Sortable.create(categoriesRef.current, {
+      handle: '.cat-handle',
+      animation: 150,
+      onEnd: (evt) => {
+        if (evt.oldIndex == null || evt.newIndex == null) return;
+        setMenu(prev => {
+          const cats = [...prev.categories];
+          const [moved] = cats.splice(evt.oldIndex!, 1);
+          cats.splice(evt.newIndex!, 0, moved);
+          return { ...prev, categories: cats };
+        });
+      },
+    });
+    return () => s.destroy();
+  }, [loading, menu.categories.length]);
+
+  // Item drag-and-drop per category
+  const initItemSortable = useCallback((el: HTMLElement | null, catIdx: number) => {
+    if (!el) {
+      sortableRefs.current.get(catIdx)?.destroy();
+      sortableRefs.current.delete(catIdx);
+      return;
+    }
+    if (sortableRefs.current.has(catIdx)) return;
+    const s = Sortable.create(el, {
+      handle: '.item-handle',
+      animation: 150,
+      onEnd: (evt) => {
+        if (evt.oldIndex == null || evt.newIndex == null) return;
+        setMenu(prev => {
+          const cats = [...prev.categories];
+          const items = [...cats[catIdx].items];
+          const [moved] = items.splice(evt.oldIndex!, 1);
+          items.splice(evt.newIndex!, 0, moved);
+          cats[catIdx] = { ...cats[catIdx], items };
+          return { ...prev, categories: cats };
+        });
+      },
+    });
+    sortableRefs.current.set(catIdx, s);
+  }, []);
 
   const handleSave = async () => {
     setSaving(true);
     try {
       await saveMenu(rid, menu);
+      setSavedMenu(menu);
       setMsg('已儲存');
       setTimeout(() => setMsg(''), 2000);
     } catch (err: any) {
       setMsg('儲存失敗: ' + err.message);
     }
     setSaving(false);
+  };
+
+  const handleDiscard = () => {
+    setMenu(savedMenu);
+    setEditingItem(null);
   };
 
   const handleUpload = async (e: Event) => {
@@ -39,6 +98,7 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
     try {
       await uploadPhotos(rid, input.files);
       setMsg('照片上傳成功');
+      setTimeout(() => setMsg(''), 3000);
     } catch (err: any) {
       setMsg('上傳失敗: ' + err.message);
     }
@@ -52,6 +112,7 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
     try {
       const result = await triggerOCR(rid);
       setMenu(result);
+      setSavedMenu(result);
       setMsg('OCR 完成！請檢查並修正菜單內容');
     } catch (err: any) {
       setMsg('OCR 失敗: ' + err.message);
@@ -62,10 +123,7 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
   const addCategory = () => {
     setMenu(prev => ({
       ...prev,
-      categories: [
-        ...prev.categories,
-        { id: 0, name: '新分類', sort_order: prev.categories.length + 1, items: [] },
-      ],
+      categories: [...prev.categories, { id: 0, name: '新分類', sort_order: prev.categories.length + 1, items: [] }],
     }));
   };
 
@@ -86,13 +144,14 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
       const cats = [...prev.categories];
       cats[catIdx] = {
         ...cats[catIdx],
-        items: [
-          ...cats[catIdx].items,
-          { id: 0, name: '新品項', description: '', price: 0, is_available: true, category_id: 0 },
-        ],
+        items: [...cats[catIdx].items, { id: 0, name: '新品項', description: '', price: 0, is_available: true, category_id: 0 }],
       };
       return { ...prev, categories: cats };
     });
+    // Auto-expand and edit new item
+    setCollapsed(prev => { const n = new Set(prev); n.delete(catIdx); return n; });
+    const newIdx = menu.categories[catIdx]?.items.length || 0;
+    setEditingItem(`${catIdx}-${newIdx}`);
   };
 
   const updateItem = (catIdx: number, itemIdx: number, update: Partial<MenuItem>) => {
@@ -108,150 +167,144 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
   const removeItem = (catIdx: number, itemIdx: number) => {
     setMenu(prev => {
       const cats = [...prev.categories];
-      cats[catIdx] = {
-        ...cats[catIdx],
-        items: cats[catIdx].items.filter((_, i) => i !== itemIdx),
-      };
+      cats[catIdx] = { ...cats[catIdx], items: cats[catIdx].items.filter((_, i) => i !== itemIdx) };
       return { ...prev, categories: cats };
     });
   };
 
-  if (loading) return <p class="p-4 text-gray-500">載入中...</p>;
+  const toggleCollapsed = (idx: number) => {
+    setCollapsed(prev => {
+      const n = new Set(prev);
+      if (n.has(idx)) n.delete(idx);
+      else n.add(idx);
+      return n;
+    });
+  };
+
+  const inputClass =
+    'w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-colors';
+
+  if (loading) return <div class="max-w-3xl mx-auto"><SkeletonList rows={4} /></div>;
 
   return (
-    <div class="max-w-3xl mx-auto p-4">
-      <button
-        onClick={() => route(`/app/restaurants/${rid}`)}
-        class="text-blue-600 text-sm mb-4 inline-block"
-      >
-        &larr; 返回餐廳設定
-      </button>
-
-      <h1 class="text-2xl font-bold mb-4">菜單編輯</h1>
+    <div class="max-w-3xl mx-auto pb-20">
+      <h1 class="text-2xl font-bold text-slate-800 tracking-tight mb-6">菜單編輯</h1>
 
       {/* Photo upload + OCR */}
-      <div class="border rounded p-4 mb-6 bg-gray-50 space-y-3">
-        <h2 class="font-semibold">照片辨識菜單</h2>
-        <div class="flex flex-wrap gap-2 items-center">
-          <label class={`bg-white border px-3 py-1.5 rounded text-sm ${uploading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-100'}`}>
-            {uploading ? '上傳中...' : '上傳照片'}
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleUpload}
-              disabled={uploading}
-              class="hidden"
-            />
-          </label>
-          <button
-            onClick={handleOCR}
-            disabled={ocrRunning}
-            class="bg-purple-600 text-white px-3 py-1.5 rounded text-sm hover:bg-purple-700 disabled:opacity-50"
-          >
-            {ocrRunning ? '辨識中...' : '開始 OCR 辨識'}
-          </button>
-        </div>
-        <p class="text-xs text-gray-500">
-          上傳菜單照片後，點擊 OCR 辨識自動擷取菜單內容
-        </p>
+      <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 mb-6">
+        <h2 class="font-semibold text-slate-800 mb-3">照片辨識菜單</h2>
+        <label class={`block border-2 border-dashed rounded-xl p-8 text-center transition-colors ${uploading ? 'border-amber-300 bg-amber-50/50' : 'border-slate-200 hover:border-amber-400 hover:bg-amber-50/30 cursor-pointer'}`}>
+          <div class="text-3xl mb-2">📷</div>
+          <p class="font-medium text-slate-700 text-sm">{uploading ? '上傳中...' : '點擊選擇菜單照片'}</p>
+          <p class="text-xs text-slate-400 mt-1">支援 JPG、PNG，可多選</p>
+          <input type="file" accept="image/*" multiple onChange={handleUpload} disabled={uploading} class="hidden" />
+        </label>
+        <button
+          onClick={handleOCR}
+          disabled={ocrRunning}
+          class="mt-3 w-full bg-slate-800 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-700 disabled:opacity-50 transition-colors"
+        >
+          {ocrRunning ? '辨識中...' : '開始 OCR 辨識'}
+        </button>
       </div>
 
-      {msg && <p class="text-sm mb-4 text-blue-700 bg-blue-50 rounded px-3 py-2">{msg}</p>}
+      {msg && (
+        <div class="mb-4 text-sm bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-2.5">
+          {msg}
+        </div>
+      )}
 
-      {/* Categories + Items */}
-      <div class="space-y-6">
+      {/* Categories */}
+      <div ref={categoriesRef} class="space-y-4">
         {menu.categories.map((cat, ci) => (
-          <div key={ci} class="border rounded p-4">
-            <div class="flex gap-2 items-center mb-3">
+          <div key={cat.id || ci} class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+            {/* Category header */}
+            <div
+              class="flex items-center gap-3 px-4 py-3 bg-slate-50 cursor-pointer select-none"
+              onClick={() => toggleCollapsed(ci)}
+            >
+              <span class="cat-handle text-slate-300 cursor-grab text-lg" onClick={(e) => e.stopPropagation()}>⠿</span>
               <input
                 type="text"
                 value={cat.name}
-                onInput={(e) =>
-                  updateCategory(ci, { name: (e.target as HTMLInputElement).value })
-                }
-                class="font-semibold text-lg border-b border-gray-300 flex-1 focus:outline-none focus:border-blue-500"
+                onInput={(e) => { e.stopPropagation(); updateCategory(ci, { name: (e.target as HTMLInputElement).value }); }}
+                onClick={(e) => e.stopPropagation()}
+                class="font-semibold text-slate-800 bg-transparent border-none focus:outline-none focus:ring-0 flex-1 min-w-0"
               />
-              <button
-                onClick={() => removeCategory(ci)}
-                class="text-red-500 text-sm hover:underline"
-              >
-                刪除分類
-              </button>
+              <span class="text-xs text-slate-400 font-medium">{cat.items.length} 項</span>
+              <button onClick={(e) => { e.stopPropagation(); removeCategory(ci); }} class="text-slate-400 hover:text-red-500 text-sm transition-colors">刪除</button>
+              <span class={`text-slate-400 transition-transform ${collapsed.has(ci) ? '-rotate-90' : ''}`}>▾</span>
             </div>
 
-            <div class="space-y-2">
-              {cat.items.map((item, ii) => (
-                <div key={ii} class="flex gap-2 items-start border-b pb-2">
-                  <div class="flex-1 space-y-1">
-                    <input
-                      type="text"
-                      value={item.name}
-                      onInput={(e) =>
-                        updateItem(ci, ii, { name: (e.target as HTMLInputElement).value })
-                      }
-                      class="w-full border rounded px-2 py-1 text-sm"
-                      placeholder="品名"
-                    />
-                    <input
-                      type="text"
-                      value={item.description || ''}
-                      onInput={(e) =>
-                        updateItem(ci, ii, {
-                          description: (e.target as HTMLInputElement).value,
-                        })
-                      }
-                      class="w-full border rounded px-2 py-1 text-sm text-gray-500"
-                      placeholder="描述（選填）"
-                    />
-                  </div>
-                  <input
-                    type="number"
-                    value={item.price}
-                    onInput={(e) =>
-                      updateItem(ci, ii, {
-                        price: parseInt((e.target as HTMLInputElement).value) || 0,
-                      })
-                    }
-                    class="w-20 border rounded px-2 py-1 text-sm text-right"
-                    min={0}
-                  />
-                  <span class="text-sm text-gray-400 pt-1">元</span>
-                  <button
-                    onClick={() => removeItem(ci, ii)}
-                    class="text-red-400 text-xs hover:underline pt-1"
-                  >
-                    刪除
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            <button
-              onClick={() => addItem(ci)}
-              class="text-blue-600 text-sm mt-2 hover:underline"
-            >
-              + 新增品項
-            </button>
+            {/* Items */}
+            {!collapsed.has(ci) && (
+              <div ref={(el) => initItemSortable(el, ci)}>
+                {cat.items.map((item, ii) => {
+                  const isEditing = editingItem === `${ci}-${ii}`;
+                  return (
+                    <div key={item.id || ii} class="border-t border-slate-50">
+                      {isEditing ? (
+                        /* Edit mode */
+                        <div class="px-4 py-3 space-y-2 bg-amber-50/30">
+                          <input type="text" value={item.name} onInput={(e) => updateItem(ci, ii, { name: (e.target as HTMLInputElement).value })} class={inputClass} placeholder="品名" />
+                          <input type="text" value={item.description || ''} onInput={(e) => updateItem(ci, ii, { description: (e.target as HTMLInputElement).value })} class={inputClass} placeholder="描述（選填）" />
+                          <div class="flex gap-2 items-center">
+                            <input type="number" value={item.price} onInput={(e) => updateItem(ci, ii, { price: parseInt((e.target as HTMLInputElement).value) || 0 })} class={`${inputClass} w-28`} min={0} />
+                            <span class="text-sm text-slate-400">元</span>
+                            <div class="flex-1" />
+                            <button onClick={() => setEditingItem(null)} class="text-xs text-amber-600 font-medium hover:text-amber-700">完成</button>
+                            <button onClick={() => removeItem(ci, ii)} class="text-xs text-red-500 hover:text-red-600">刪除</button>
+                          </div>
+                        </div>
+                      ) : (
+                        /* Read mode */
+                        <div
+                          class="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50/50 group cursor-pointer"
+                          onClick={() => setEditingItem(`${ci}-${ii}`)}
+                        >
+                          <span class="item-handle text-slate-200 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>⠿</span>
+                          <div class="flex-1 min-w-0">
+                            <p class="text-sm font-medium text-slate-800 truncate">{item.name}</p>
+                            {item.description && <p class="text-xs text-slate-400 truncate">{item.description}</p>}
+                          </div>
+                          <span class="text-sm font-medium text-slate-700 tabular-nums">${item.price}</span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); removeItem(ci, ii); }}
+                            class="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all text-sm"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                <button onClick={() => addItem(ci)} class="w-full text-left px-4 py-2.5 text-sm text-amber-600 hover:bg-amber-50/50 transition-colors font-medium">
+                  + 新增品項
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </div>
 
-      <div class="flex gap-3 mt-6">
-        <button
-          onClick={addCategory}
-          class="border px-4 py-2 rounded hover:bg-gray-100 text-sm"
-        >
-          + 新增分類
-        </button>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
-        >
-          {saving ? '儲存中...' : '儲存菜單'}
-        </button>
-      </div>
+      <button
+        onClick={addCategory}
+        class="mt-4 border-2 border-dashed border-slate-200 rounded-xl px-4 py-3 w-full text-sm text-slate-500 hover:border-amber-400 hover:text-amber-600 transition-colors font-medium"
+      >
+        + 新增分類
+      </button>
+
+      {/* Floating save bar */}
+      {isDirty && (
+        <div class="fixed bottom-0 left-0 lg:left-60 right-0 bg-white border-t border-slate-200 px-6 py-3 flex items-center justify-between shadow-lg z-40">
+          <p class="text-sm text-slate-500">有未儲存的變更</p>
+          <div class="flex gap-2">
+            <button onClick={handleDiscard} class="border border-slate-200 px-4 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition-colors">捨棄</button>
+            <button onClick={handleSave} disabled={saving} class="bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-50 transition-colors">{saving ? '儲存中...' : '儲存菜單'}</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
