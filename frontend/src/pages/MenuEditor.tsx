@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
-import { getMenu, saveMenu, uploadPhotos, triggerOCR, listMenuPhotos, deleteMenuPhoto } from '../lib/api';
+import { getMenu, saveMenu, uploadPhotos, triggerOCR, listMenuPhotos, deleteMenuPhoto, getRestaurant } from '../lib/api';
 import type { MenuData, MenuCategory, MenuItem, MenuPhoto } from '../lib/api';
 import type { RoutableProps } from '../lib/route';
 import Sortable from 'sortablejs';
@@ -18,6 +18,9 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
   const [photos, setPhotos] = useState<MenuPhoto[]>([]);
   const [deletingPhotoId, setDeletingPhotoId] = useState<number | null>(null);
   const [msg, setMsg] = useState('');
+  const [slug, setSlug] = useState('');
+  const [tab, setTab] = useState<'ocr' | 'edit' | 'preview'>('edit');
+  const [previewKey, setPreviewKey] = useState(0);
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
   const [editingItem, setEditingItem] = useState<string | null>(null); // "catIdx-itemIdx"
   const batchOGDefault = { cat: null as number | null, name: '', options: '', min: 1, max: 1 };
@@ -33,10 +36,13 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
         const safe = { categories: m?.categories || [] };
         setMenu(safe);
         setSavedMenu(safe);
+        const hasItems = safe.categories.some(c => c.items.length > 0);
+        if (!hasItems) setTab('ocr');
       })
       .catch(() => {})
       .finally(() => setLoading(false));
     listMenuPhotos(rid).then(setPhotos).catch(() => {});
+    getRestaurant(rid).then(r => setSlug(r.slug)).catch(() => {});
   }, [rid]);
 
   // Category drag-and-drop
@@ -89,6 +95,7 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
     try {
       await saveMenu(rid, menu);
       setSavedMenu(menu);
+      setPreviewKey(k => k + 1);
       setMsg('已儲存');
       setTimeout(() => setMsg(''), 2000);
     } catch (err: any) {
@@ -260,11 +267,37 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
 
   if (loading) return <div class="max-w-3xl mx-auto"><SkeletonList rows={4} /></div>;
 
+  const tabBtn = (t: typeof tab, label: string) => (
+    <button
+      onClick={() => setTab(t)}
+      class={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+        tab === t
+          ? 'bg-amber-600 text-white'
+          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+      }`}
+    >
+      {label}
+    </button>
+  );
+
   return (
     <div class="max-w-3xl mx-auto pb-20">
       <h1 class="text-2xl font-bold text-slate-800 tracking-tight mb-6">菜單編輯</h1>
 
-      {/* Photo upload + OCR */}
+      {msg && (
+        <div class="mb-4 text-sm bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-2.5">
+          {msg}
+        </div>
+      )}
+
+      <div class="flex gap-2 mb-6">
+        {tabBtn('ocr', '照片辨識')}
+        {tabBtn('edit', '編輯菜單')}
+        {tabBtn('preview', '預覽')}
+      </div>
+
+      {/* OCR tab */}
+      {tab === 'ocr' && (
       <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 mb-6">
         <h2 class="font-semibold text-slate-800 mb-3">照片辨識菜單</h2>
         <label
@@ -321,13 +354,10 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
           {ocrRunning ? '辨識中...' : `開始 OCR 辨識${photos.length > 0 ? ` (${photos.length} 張)` : ''}`}
         </button>
       </div>
-
-      {msg && (
-        <div class="mb-4 text-sm bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-2.5">
-          {msg}
-        </div>
       )}
 
+      {/* Edit tab */}
+      {tab === 'edit' && (<>
       {/* Categories */}
       <div ref={categoriesRef} class="space-y-4">
         {menu.categories.map((cat, ci) => (
@@ -573,6 +603,20 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
       >
         + 新增分類
       </button>
+      </>)}
+
+      {/* Preview tab */}
+      {tab === 'preview' && (
+        slug ? (
+          <iframe
+            key={previewKey}
+            src={`/r/${slug}`}
+            class="w-full h-[calc(100vh-8rem)] rounded-lg border border-slate-200"
+          />
+        ) : (
+          <div class="text-center text-slate-400 py-12">請先儲存餐廳資料</div>
+        )
+      )}
 
       {/* Floating save bar */}
       {isDirty && (
