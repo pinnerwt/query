@@ -20,7 +20,7 @@ const AuthContext = createContext<AuthCtx>({
 });
 
 export function AuthProvider({ children }: { children: preact.ComponentChildren }) {
-  const [token, setTokenState] = useState<string | null>(localStorage.getItem('token'));
+  const [token, setTokenState] = useState<string | null>(() => localStorage.getItem('token'));
   const [owner, setOwner] = useState<Owner | null>(null);
   const [loading, setLoading] = useState(true);
 

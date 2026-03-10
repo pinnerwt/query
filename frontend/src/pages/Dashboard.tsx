@@ -12,6 +12,8 @@ export default function Dashboard(_props: RoutableProps) {
   const [newName, setNewName] = useState('');
   const [newAddress, setNewAddress] = useState('');
   const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const load = () => {
     listMyRestaurants()
@@ -24,18 +26,29 @@ export default function Dashboard(_props: RoutableProps) {
 
   const handleCreate = async (e: Event) => {
     e.preventDefault();
-    if (!newName.trim()) return;
-    await createRestaurant({ name: newName, address: newAddress });
-    setNewName('');
-    setNewAddress('');
-    setShowCreate(false);
-    load();
+    if (!newName.trim() || creating) return;
+    setCreating(true);
+    try {
+      await createRestaurant({ name: newName, address: newAddress });
+      setNewName('');
+      setNewAddress('');
+      setShowCreate(false);
+      load();
+    } finally {
+      setCreating(false);
+    }
   };
 
   const handleDelete = async (id: number) => {
+    if (deletingId !== null) return;
     if (!confirm('確定刪除？')) return;
-    await deleteRestaurant(id);
-    load();
+    setDeletingId(id);
+    try {
+      await deleteRestaurant(id);
+      load();
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   return (
@@ -77,9 +90,10 @@ export default function Dashboard(_props: RoutableProps) {
                 </div>
                 <button
                   onClick={() => handleDelete(r.id)}
-                  class="text-red-500 text-sm hover:underline"
+                  disabled={deletingId === r.id}
+                  class="text-red-500 text-sm hover:underline disabled:opacity-50"
                 >
-                  刪除
+                  {deletingId === r.id ? '刪除中...' : '刪除'}
                 </button>
               </div>
             ))}
@@ -108,9 +122,10 @@ export default function Dashboard(_props: RoutableProps) {
               <div class="flex gap-2">
                 <button
                   type="submit"
-                  class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                  disabled={creating}
+                  class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
                 >
-                  建立
+                  {creating ? '建立中...' : '建立'}
                 </button>
                 <button
                   type="button"

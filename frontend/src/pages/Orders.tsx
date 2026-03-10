@@ -31,6 +31,7 @@ export default function Orders({ id = '' }: RoutableProps & { id?: string }) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [filter, setFilter] = useState('');
   const [loading, setLoading] = useState(true);
+  const [updatingId, setUpdatingId] = useState<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval>>();
 
   const load = () => {
@@ -48,15 +49,26 @@ export default function Orders({ id = '' }: RoutableProps & { id?: string }) {
 
   const advance = async (order: Order) => {
     const next = NEXT_STATUS[order.status];
-    if (!next) return;
-    await updateOrderStatus(rid, order.id, next);
-    load();
+    if (!next || updatingId !== null) return;
+    setUpdatingId(order.id);
+    try {
+      await updateOrderStatus(rid, order.id, next);
+      load();
+    } finally {
+      setUpdatingId(null);
+    }
   };
 
   const cancel = async (order: Order) => {
+    if (updatingId !== null) return;
     if (!confirm('確定取消此訂單？')) return;
-    await updateOrderStatus(rid, order.id, 'cancelled');
-    load();
+    setUpdatingId(order.id);
+    try {
+      await updateOrderStatus(rid, order.id, 'cancelled');
+      load();
+    } finally {
+      setUpdatingId(null);
+    }
   };
 
   return (
@@ -117,15 +129,17 @@ export default function Orders({ id = '' }: RoutableProps & { id?: string }) {
                 {NEXT_STATUS[o.status] && (
                   <button
                     onClick={() => advance(o)}
-                    class="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700"
+                    disabled={updatingId === o.id}
+                    class="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
                   >
-                    {STATUS_LABELS[NEXT_STATUS[o.status]]}
+                    {updatingId === o.id ? '處理中...' : STATUS_LABELS[NEXT_STATUS[o.status]]}
                   </button>
                 )}
                 {o.status !== 'completed' && o.status !== 'cancelled' && (
                   <button
                     onClick={() => cancel(o)}
-                    class="text-red-600 border border-red-300 px-3 py-1 rounded text-sm hover:bg-red-50"
+                    disabled={updatingId === o.id}
+                    class="text-red-600 border border-red-300 px-3 py-1 rounded text-sm hover:bg-red-50 disabled:opacity-50"
                   >
                     取消
                   </button>

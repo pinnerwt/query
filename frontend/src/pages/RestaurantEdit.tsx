@@ -23,6 +23,7 @@ export default function RestaurantEdit({ id = '' }: RoutableProps & { id?: strin
     minimum_spend: 0,
   });
   const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
 
   useEffect(() => {
     getRestaurant(rid).then((r) => {
@@ -42,6 +43,7 @@ export default function RestaurantEdit({ id = '' }: RoutableProps & { id?: strin
 
   const save = async (e: Event) => {
     e.preventDefault();
+    if (saving) return;
     setSaving(true);
     try {
       const updated = await updateRestaurant(rid, form);
@@ -51,9 +53,14 @@ export default function RestaurantEdit({ id = '' }: RoutableProps & { id?: strin
   };
 
   const togglePublish = async () => {
-    if (!rest) return;
-    const updated = await publishRestaurant(rid, !rest.is_published);
-    setRest(updated);
+    if (!rest || publishing) return;
+    setPublishing(true);
+    try {
+      const updated = await publishRestaurant(rid, !rest.is_published);
+      setRest(updated);
+    } finally {
+      setPublishing(false);
+    }
   };
 
   if (!rest) return <p class="p-4 text-gray-500">載入中...</p>;
@@ -68,13 +75,14 @@ export default function RestaurantEdit({ id = '' }: RoutableProps & { id?: strin
         <h1 class="text-2xl font-bold">{rest.name}</h1>
         <button
           onClick={togglePublish}
-          class={`px-3 py-1 rounded text-sm ${
+          disabled={publishing}
+          class={`px-3 py-1 rounded text-sm disabled:opacity-50 ${
             rest.is_published
               ? 'bg-red-100 text-red-700 hover:bg-red-200'
               : 'bg-green-100 text-green-700 hover:bg-green-200'
           }`}
         >
-          {rest.is_published ? '取消發布' : '發布'}
+          {publishing ? '處理中...' : rest.is_published ? '取消發布' : '發布'}
         </button>
       </div>
 

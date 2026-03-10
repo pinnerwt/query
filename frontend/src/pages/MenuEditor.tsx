@@ -10,6 +10,7 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [ocrRunning, setOcrRunning] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [msg, setMsg] = useState('');
 
   useEffect(() => {
@@ -34,12 +35,14 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
   const handleUpload = async (e: Event) => {
     const input = e.target as HTMLInputElement;
     if (!input.files?.length) return;
+    setUploading(true);
     try {
       await uploadPhotos(rid, input.files);
       setMsg('照片上傳成功');
     } catch (err: any) {
       setMsg('上傳失敗: ' + err.message);
     }
+    setUploading(false);
     input.value = '';
   };
 
@@ -57,52 +60,60 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
   };
 
   const addCategory = () => {
-    setMenu({
-      ...menu,
+    setMenu(prev => ({
+      ...prev,
       categories: [
-        ...menu.categories,
-        { id: 0, name: '新分類', sort_order: menu.categories.length + 1, items: [] },
+        ...prev.categories,
+        { id: 0, name: '新分類', sort_order: prev.categories.length + 1, items: [] },
       ],
-    });
+    }));
   };
 
   const updateCategory = (idx: number, update: Partial<MenuCategory>) => {
-    const cats = [...menu.categories];
-    cats[idx] = { ...cats[idx], ...update };
-    setMenu({ ...menu, categories: cats });
+    setMenu(prev => {
+      const cats = [...prev.categories];
+      cats[idx] = { ...cats[idx], ...update };
+      return { ...prev, categories: cats };
+    });
   };
 
   const removeCategory = (idx: number) => {
-    setMenu({ ...menu, categories: menu.categories.filter((_, i) => i !== idx) });
+    setMenu(prev => ({ ...prev, categories: prev.categories.filter((_, i) => i !== idx) }));
   };
 
   const addItem = (catIdx: number) => {
-    const cats = [...menu.categories];
-    cats[catIdx] = {
-      ...cats[catIdx],
-      items: [
-        ...cats[catIdx].items,
-        { id: 0, name: '新品項', description: '', price: 0, is_available: true, category_id: 0 },
-      ],
-    };
-    setMenu({ ...menu, categories: cats });
+    setMenu(prev => {
+      const cats = [...prev.categories];
+      cats[catIdx] = {
+        ...cats[catIdx],
+        items: [
+          ...cats[catIdx].items,
+          { id: 0, name: '新品項', description: '', price: 0, is_available: true, category_id: 0 },
+        ],
+      };
+      return { ...prev, categories: cats };
+    });
   };
 
   const updateItem = (catIdx: number, itemIdx: number, update: Partial<MenuItem>) => {
-    const cats = [...menu.categories];
-    const items = [...cats[catIdx].items];
-    items[itemIdx] = { ...items[itemIdx], ...update };
-    cats[catIdx] = { ...cats[catIdx], items };
-    setMenu({ ...menu, categories: cats });
+    setMenu(prev => {
+      const cats = [...prev.categories];
+      const items = [...cats[catIdx].items];
+      items[itemIdx] = { ...items[itemIdx], ...update };
+      cats[catIdx] = { ...cats[catIdx], items };
+      return { ...prev, categories: cats };
+    });
   };
 
   const removeItem = (catIdx: number, itemIdx: number) => {
-    const cats = [...menu.categories];
-    cats[catIdx] = {
-      ...cats[catIdx],
-      items: cats[catIdx].items.filter((_, i) => i !== itemIdx),
-    };
-    setMenu({ ...menu, categories: cats });
+    setMenu(prev => {
+      const cats = [...prev.categories];
+      cats[catIdx] = {
+        ...cats[catIdx],
+        items: cats[catIdx].items.filter((_, i) => i !== itemIdx),
+      };
+      return { ...prev, categories: cats };
+    });
   };
 
   if (loading) return <p class="p-4 text-gray-500">載入中...</p>;
@@ -122,13 +133,14 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
       <div class="border rounded p-4 mb-6 bg-gray-50 space-y-3">
         <h2 class="font-semibold">照片辨識菜單</h2>
         <div class="flex flex-wrap gap-2 items-center">
-          <label class="bg-white border px-3 py-1.5 rounded cursor-pointer hover:bg-gray-100 text-sm">
-            上傳照片
+          <label class={`bg-white border px-3 py-1.5 rounded text-sm ${uploading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-100'}`}>
+            {uploading ? '上傳中...' : '上傳照片'}
             <input
               type="file"
               accept="image/*"
               multiple
               onChange={handleUpload}
+              disabled={uploading}
               class="hidden"
             />
           </label>
