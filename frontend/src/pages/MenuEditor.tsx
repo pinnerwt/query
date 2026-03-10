@@ -398,7 +398,7 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
                               }}
                               class={`${inputClass} w-24`}
                             >
-                              <option value="custom">自訂</option>
+                              <option value="custom">定價</option>
                               <option value="-1">未知</option>
                               <option value="-2">時價</option>
                             </select>
@@ -430,18 +430,19 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
                                     });
                                   }}
                                 />
-                                <label class="text-xs text-slate-400 flex items-center gap-0.5 whitespace-nowrap">
+                                <span class="text-xs text-slate-400 flex items-center gap-0.5 whitespace-nowrap">選
                                   <input type="number" min={0} value={og.min_choices} class="w-8 bg-transparent border-none text-xs text-slate-500 p-0 text-center focus:outline-none" onInput={(e) => {
                                     const val = parseInt((e.target as HTMLInputElement).value) || 0;
                                     setMenu((prev) => { const cats = [...prev.categories]; const items = [...cats[ci].items]; const groups = [...(items[ii].option_groups || [])]; groups[ogIdx] = { ...groups[ogIdx], min_choices: val }; items[ii] = { ...items[ii], option_groups: groups }; cats[ci] = { ...cats[ci], items }; return { ...prev, categories: cats }; });
                                   }} />-<input type="number" min={0} value={og.max_choices} class="w-8 bg-transparent border-none text-xs text-slate-500 p-0 text-center focus:outline-none" onInput={(e) => {
                                     const val = parseInt((e.target as HTMLInputElement).value) || 0;
                                     setMenu((prev) => { const cats = [...prev.categories]; const items = [...cats[ci].items]; const groups = [...(items[ii].option_groups || [])]; groups[ogIdx] = { ...groups[ogIdx], max_choices: val }; items[ii] = { ...items[ii], option_groups: groups }; cats[ci] = { ...cats[ci], items }; return { ...prev, categories: cats }; });
-                                  }} />
-                                </label>
+                                  }} />項
+                                </span>
                                 <button
                                   class="text-red-400 hover:text-red-600 text-sm"
                                   onClick={() => {
+                                    if (!confirm('確定要刪除此選項群組嗎？')) return;
                                     setMenu((prev) => {
                                       const cats = [...prev.categories];
                                       const items = [...cats[ci].items];
@@ -453,20 +454,25 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
                                   }}
                                 >✕</button>
                               </div>
-                              <div class="flex flex-wrap gap-1">
+                              <div class="flex items-center gap-2 px-2 text-[10px] text-slate-400">
+                                <span class="flex-1 min-w-0">名稱</span>
+                                <span class="w-16 text-right shrink-0">加價</span>
+                                <span class="w-4"></span>
+                              </div>
+                              <div class="flex flex-col gap-1">
                                 {og.options.map((opt, optIdx) => (
-                                  <span key={optIdx} class="inline-flex items-center gap-1 bg-white border border-slate-200 rounded px-2 py-0.5 text-sm">
+                                  <span key={optIdx} class="flex items-center gap-2 bg-white border border-slate-200 rounded px-2 py-0.5 text-sm">
                                     <input
-                                      class="border-none bg-transparent text-sm w-20 p-0 focus:outline-none"
+                                      class="border-none bg-transparent text-sm flex-1 min-w-0 p-0 focus:outline-none"
                                       value={opt.name}
                                       onInput={(e) => updateOption(ci, ii, ogIdx, optIdx, { name: (e.target as HTMLInputElement).value })}
                                     />
                                     <input
                                       type="number"
-                                      class="border-none bg-transparent text-xs w-12 p-0 text-amber-600 focus:outline-none text-right"
+                                      class="border-none bg-transparent text-xs w-16 p-0 text-amber-600 focus:outline-none text-right shrink-0"
                                       value={opt.price_adjustment}
                                       onInput={(e) => updateOption(ci, ii, ogIdx, optIdx, { price_adjustment: parseInt((e.target as HTMLInputElement).value) || 0 })}
-                                      placeholder="±"
+                                      placeholder="±0"
                                     />
                                     <button
                                       class="text-red-300 hover:text-red-500 text-xs"
