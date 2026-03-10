@@ -198,18 +198,19 @@ func main() {
 		}
 	}
 
-	if len(menu.Combos) > 0 {
-		fmt.Printf("\n=== Combos ===\n")
-		for _, combo := range menu.Combos {
-			fmt.Printf("\n[%s] %d元 — %s\n", combo.Name, combo.Price, combo.Description)
-			for _, g := range combo.Groups {
-				fmt.Printf("  %s (choose %d-%d):\n", g.Name, g.MinChoices, g.MaxChoices)
-				for _, o := range g.Options {
-					adj := ""
-					if o.PriceAdjustment != 0 {
-						adj = fmt.Sprintf(" (+%d)", o.PriceAdjustment)
+	// Print items with option groups
+	for _, cat := range menu.Categories {
+		for _, item := range cat.Items {
+			if len(item.OptionGroups) > 0 {
+				for _, og := range item.OptionGroups {
+					fmt.Printf("  [%s] %s (choose %d-%d):\n", item.Name, og.Name, og.MinChoices, og.MaxChoices)
+					for _, o := range og.Options {
+						adj := ""
+						if o.PriceAdjustment != 0 {
+							adj = fmt.Sprintf(" (+%d)", o.PriceAdjustment)
+						}
+						fmt.Printf("    - %s%s\n", o.Name, adj)
 					}
-					fmt.Printf("    - %s%s\n", o.Name, adj)
 				}
 			}
 		}
