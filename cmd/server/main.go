@@ -1130,6 +1130,17 @@ func (s *server) buildMenuJSON(ctx context.Context, restaurantID int64) (map[str
 		return nil, err
 	}
 
+	optionGroups, err := s.q.ListOptionGroupsByRestaurant(ctx, restaurantID)
+	if err != nil {
+		return nil, err
+	}
+
+	optionChoices, err := s.q.ListOptionChoicesByRestaurant(ctx, restaurantID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build price tier map: item_id -> tiers
 	tierMap := make(map[int64][]map[string]interface{})
 	for _, pt := range priceTiers {
 		tierMap[pt.MenuItemID] = append(tierMap[pt.MenuItemID], map[string]interface{}{
@@ -1139,11 +1150,31 @@ func (s *server) buildMenuJSON(ctx context.Context, restaurantID int64) (map[str
 		})
 	}
 
-	catIdx := make(map[int64]int)
+	// Build option choice map: group_id -> choices
+	choiceMap := make(map[int64][]map[string]interface{})
+	for _, oc := range optionChoices {
+		choiceMap[oc.GroupID] = append(choiceMap[oc.GroupID], map[string]interface{}{
+			"name":       oc.Name,
+			"adjustment": oc.PriceAdjustment,
+		})
+	}
+
+	// Build option group map: item_id -> groups
+	ogMap := make(map[int64][]map[string]interface{})
+	for _, og := range optionGroups {
+		ogMap[og.MenuItemID] = append(ogMap[og.MenuItemID], map[string]interface{}{
+			"name":    og.Name,
+			"min":     og.MinChoices,
+			"max":     og.MaxChoices,
+			"options": choiceMap[og.ID],
+		})
+	}
+
 	type categoryOut struct {
 		Name  string                   `json:"name"`
 		Items []map[string]interface{} `json:"items"`
 	}
+	catIdx := make(map[int64]int)
 	cats := make([]categoryOut, 0)
 	for _, c := range categories {
 		catIdx[c.ID] = len(cats)
@@ -1162,6 +1193,9 @@ func (s *server) buildMenuJSON(ctx context.Context, restaurantID int64) (map[str
 		if tiers, ok := tierMap[it.ID]; ok {
 			mi["price_tiers"] = tiers
 		}
+		if groups, ok := ogMap[it.ID]; ok {
+			mi["option_groups"] = groups
+		}
 		if it.CategoryID.Valid {
 			if idx, ok := catIdx[it.CategoryID.Int64]; ok {
 				cats[idx].Items = append(cats[idx].Items, mi)
@@ -1174,46 +1208,8 @@ func (s *server) buildMenuJSON(ctx context.Context, restaurantID int64) (map[str
 		cats[len(cats)-1].Items = append(cats[len(cats)-1].Items, mi)
 	}
 
-	comboMeals, err := s.q.ListComboMealsByRestaurant(ctx, restaurantID)
-	if err != nil {
-		return nil, err
-	}
-
-	combos := make([]map[string]interface{}, 0)
-	for _, cm := range comboMeals {
-		groups, _ := s.q.ListComboMealGroupsByComboMeal(ctx, cm.ID)
-		var grpOut []map[string]interface{}
-		for _, g := range groups {
-			options, _ := s.q.ListComboMealGroupOptionsByGroup(ctx, g.ID)
-			var opts []map[string]interface{}
-			for _, o := range options {
-				opts = append(opts, map[string]interface{}{
-					"name":       o.ItemName.String,
-					"adjustment": o.PriceAdjustment,
-				})
-			}
-			grpOut = append(grpOut, map[string]interface{}{
-				"name":    g.Name,
-				"min":     g.MinChoices,
-				"max":     g.MaxChoices,
-				"options": opts,
-			})
-		}
-		combo := map[string]interface{}{
-			"id":     cm.ID,
-			"name":   cm.Name,
-			"price":  cm.Price,
-			"groups": grpOut,
-		}
-		if cm.Description.Valid && cm.Description.String != "" {
-			combo["description"] = cm.Description.String
-		}
-		combos = append(combos, combo)
-	}
-
 	return map[string]interface{}{
 		"categories": cats,
-		"combos":     combos,
 	}, nil
 }
 
