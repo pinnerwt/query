@@ -8,45 +8,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type AddOn struct {
-	ID           int64
-	RestaurantID int64
-	Name         string
-	Price        int32
-	CreatedAt    pgtype.Timestamptz
-}
-
-type ComboMeal struct {
-	ID           int64
-	RestaurantID int64
-	Name         string
-	Description  pgtype.Text
-	Price        int32
-	IsAvailable  bool
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
-}
-
-type ComboMealGroup struct {
-	ID          int64
-	ComboMealID int64
-	Name        string
-	MinChoices  int32
-	MaxChoices  int32
-	SortOrder   int32
-	CreatedAt   pgtype.Timestamptz
-}
-
-type ComboMealGroupOption struct {
-	ID              int64
-	GroupID         int64
-	MenuItemID      pgtype.Int8
-	ItemName        pgtype.Text
-	PriceAdjustment int32
-	SortOrder       int32
-	CreatedAt       pgtype.Timestamptz
-}
-
 type DiscoveryQuery struct {
 	ID          int64
 	Latitude    float64
@@ -76,6 +37,25 @@ type MenuItem struct {
 	PhotoUrl     pgtype.Text
 	CreatedAt    pgtype.Timestamptz
 	UpdatedAt    pgtype.Timestamptz
+}
+
+type MenuItemOptionChoice struct {
+	ID              int64
+	GroupID         int64
+	Name            string
+	PriceAdjustment int32
+	SortOrder       int32
+	CreatedAt       pgtype.Timestamptz
+}
+
+type MenuItemOptionGroup struct {
+	ID         int64
+	MenuItemID int64
+	Name       string
+	MinChoices int32
+	MaxChoices int32
+	SortOrder  int32
+	CreatedAt  pgtype.Timestamptz
 }
 
 type MenuItemPriceTier struct {
