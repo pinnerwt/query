@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useState, useEffect } from 'preact/hooks';
 import { route, getCurrentUrl } from 'preact-router';
 import { useAuth } from '../lib/auth';
 import type { ComponentChildren } from 'preact';
@@ -24,7 +24,22 @@ interface NavItem {
 export default function Layout({ children }: { children: ComponentChildren }) {
   const { owner, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const url = getCurrentUrl();
+  const [url, setUrl] = useState(getCurrentUrl());
+
+  useEffect(() => {
+    const update = () => setUrl(getCurrentUrl());
+    addEventListener('popstate', update);
+    // Intercept pushState/replaceState so client-side route() triggers re-render
+    const origPush = history.pushState.bind(history);
+    const origReplace = history.replaceState.bind(history);
+    history.pushState = (...args) => { origPush(...args); update(); };
+    history.replaceState = (...args) => { origReplace(...args); update(); };
+    return () => {
+      removeEventListener('popstate', update);
+      history.pushState = origPush;
+      history.replaceState = origReplace;
+    };
+  }, []);
 
   // Extract restaurant ID from URL if inside a restaurant context
   const restaurantMatch = url.match(/\/app\/restaurants\/(\d+)/);
