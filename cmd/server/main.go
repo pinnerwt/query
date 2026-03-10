@@ -99,7 +99,10 @@ func main() {
 	mux.Handle("PUT /api/restaurants/{id}", auth.Middleware(secretBytes, http.HandlerFunc(s.handleUpdateRestaurant)))
 	mux.Handle("DELETE /api/restaurants/{id}", auth.Middleware(secretBytes, http.HandlerFunc(s.handleDeleteRestaurant)))
 	mux.Handle("PUT /api/restaurants/{id}/hours", auth.Middleware(secretBytes, http.HandlerFunc(s.handleSetHours)))
+	mux.Handle("GET /api/restaurants/{id}/hours", auth.Middleware(secretBytes, http.HandlerFunc(s.handleGetHours)))
 	mux.Handle("PUT /api/restaurants/{id}/publish", auth.Middleware(secretBytes, http.HandlerFunc(s.handlePublish)))
+	mux.Handle("PUT /api/restaurants/{id}/location", auth.Middleware(secretBytes, http.HandlerFunc(s.handleSetLocation)))
+	mux.Handle("GET /api/restaurants/{id}/location", auth.Middleware(secretBytes, http.HandlerFunc(s.handleGetLocation)))
 
 	// Menu (auth required)
 	mux.Handle("GET /api/restaurants/{id}/menu", auth.Middleware(secretBytes, http.HandlerFunc(s.handleGetMenu)))
@@ -135,7 +138,7 @@ func main() {
 		log.Fatalf("Failed to create sub FS: %v", err)
 	}
 	appHandler := http.StripPrefix("/app/", http.FileServer(http.FS(distFS)))
-	mux.HandleFunc("/app/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /app/", func(w http.ResponseWriter, r *http.Request) {
 		// Try to serve the actual file; if not found, serve index.html for SPA routing
 		path := strings.TrimPrefix(r.URL.Path, "/app/")
 		if path == "" {
@@ -405,6 +408,36 @@ func (s *server) handleDeleteRestaurant(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(204)
 }
 
+func (s *server) handleGetHours(w http.ResponseWriter, r *http.Request) {
+	ownerID, _ := auth.OwnerIDFromContext(r.Context())
+	id, err := parseID(r, "id")
+	if err != nil {
+		jsonError(w, "invalid id", 400)
+		return
+	}
+	rest, err := s.q.GetRestaurantByID(r.Context(), id)
+	if err != nil || rest.OwnerID != ownerID {
+		jsonError(w, "not found or forbidden", 404)
+		return
+	}
+	hours, err := s.q.ListRestaurantHours(r.Context(), id)
+	if err != nil {
+		jsonError(w, "internal error", 500)
+		return
+	}
+	out := make([]map[string]interface{}, 0, len(hours))
+	for _, h := range hours {
+		openSecs := h.OpenTime.Microseconds / 1e6
+		closeSecs := h.CloseTime.Microseconds / 1e6
+		out = append(out, map[string]interface{}{
+			"day_of_week": h.DayOfWeek,
+			"open_time":   fmt.Sprintf("%02d:%02d", openSecs/3600, (openSecs%3600)/60),
+			"close_time":  fmt.Sprintf("%02d:%02d", closeSecs/3600, (closeSecs%3600)/60),
+		})
+	}
+	jsonResp(w, 200, map[string]interface{}{"hours": out})
+}
+
 func (s *server) handleSetHours(w http.ResponseWriter, r *http.Request) {
 	ownerID, _ := auth.OwnerIDFromContext(r.Context())
 	id, err := parseID(r, "id")
@@ -446,6 +479,53 @@ func (s *server) handleSetHours(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonResp(w, 200, map[string]string{"status": "ok"})
+}
+
+func (s *server) handleSetLocation(w http.ResponseWriter, r *http.Request) {
+	ownerID, _ := auth.OwnerIDFromContext(r.Context())
+	id, err := parseID(r, "id")
+	if err != nil {
+		jsonError(w, "invalid id", 400)
+		return
+	}
+	var req struct {
+		Latitude  float64 `json:"latitude"`
+		Longitude float64 `json:"longitude"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", 400)
+		return
+	}
+	if err := s.q.UpdateRestaurantLocation(r.Context(), db.UpdateRestaurantLocationParams{
+		Longitude: req.Longitude,
+		Latitude:  req.Latitude,
+		ID:        id,
+		OwnerID:   ownerID,
+	}); err != nil {
+		jsonError(w, "not found or forbidden", 404)
+		return
+	}
+	jsonResp(w, 200, map[string]string{"status": "ok"})
+}
+
+func (s *server) handleGetLocation(w http.ResponseWriter, r *http.Request) {
+	ownerID, _ := auth.OwnerIDFromContext(r.Context())
+	id, err := parseID(r, "id")
+	if err != nil {
+		jsonError(w, "invalid id", 400)
+		return
+	}
+	rest, err := s.q.GetRestaurantByID(r.Context(), id)
+	if err != nil || rest.OwnerID != ownerID {
+		jsonError(w, "not found or forbidden", 404)
+		return
+	}
+	loc, err := s.q.GetRestaurantLocation(r.Context(), id)
+	if err != nil {
+		jsonResp(w, 200, map[string]interface{}{"latitude": nil, "longitude": nil})
+		return
+	}
+	jsonResp(w, 200, map[string]interface{}{"latitude": loc.Latitude, "longitude": loc.Longitude})
 }
 
 func (s *server) handlePublish(w http.ResponseWriter, r *http.Request) {
@@ -1001,7 +1081,7 @@ func (s *server) buildMenuJSON(ctx context.Context, restaurantID int64) (map[str
 		Name  string                   `json:"name"`
 		Items []map[string]interface{} `json:"items"`
 	}
-	var cats []categoryOut
+	cats := make([]categoryOut, 0)
 	for _, c := range categories {
 		catIdx[c.ID] = len(cats)
 		cats = append(cats, categoryOut{Name: c.Name})
@@ -1036,7 +1116,7 @@ func (s *server) buildMenuJSON(ctx context.Context, restaurantID int64) (map[str
 		return nil, err
 	}
 
-	var combos []map[string]interface{}
+	combos := make([]map[string]interface{}, 0)
 	for _, cm := range comboMeals {
 		groups, _ := s.q.ListComboMealGroupsByComboMeal(ctx, cm.ID)
 		var grpOut []map[string]interface{}

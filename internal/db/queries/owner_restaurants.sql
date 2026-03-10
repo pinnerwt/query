@@ -53,3 +53,11 @@ SELECT * FROM restaurants WHERE google_place_id = $1;
 
 -- name: GetPublishedRestaurantBySlug :one
 SELECT * FROM restaurants WHERE slug = $1 AND is_published = TRUE;
+
+-- name: UpdateRestaurantLocation :exec
+UPDATE restaurants SET location = ST_MakePoint(@longitude::float8, @latitude::float8)::geography, updated_at = NOW()
+WHERE id = @id AND owner_id = @owner_id;
+
+-- name: GetRestaurantLocation :one
+SELECT ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude
+FROM restaurants WHERE id = $1 AND location IS NOT NULL;

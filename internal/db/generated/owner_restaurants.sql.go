@@ -214,6 +214,23 @@ func (q *Queries) GetRestaurantBySlug(ctx context.Context, slug string) (Restaur
 	return i, err
 }
 
+const getRestaurantLocation = `-- name: GetRestaurantLocation :one
+SELECT ST_Y(location::geometry) AS latitude, ST_X(location::geometry) AS longitude
+FROM restaurants WHERE id = $1 AND location IS NOT NULL
+`
+
+type GetRestaurantLocationRow struct {
+	Latitude  interface{}
+	Longitude interface{}
+}
+
+func (q *Queries) GetRestaurantLocation(ctx context.Context, id int64) (GetRestaurantLocationRow, error) {
+	row := q.db.QueryRow(ctx, getRestaurantLocation, id)
+	var i GetRestaurantLocationRow
+	err := row.Scan(&i.Latitude, &i.Longitude)
+	return i, err
+}
+
 const insertRestaurantHour = `-- name: InsertRestaurantHour :exec
 INSERT INTO restaurant_hours (restaurant_id, day_of_week, open_time, close_time)
 VALUES ($1, $2, $3, $4)
@@ -373,6 +390,28 @@ func (q *Queries) UpdateRestaurant(ctx context.Context, arg UpdateRestaurantPara
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const updateRestaurantLocation = `-- name: UpdateRestaurantLocation :exec
+UPDATE restaurants SET location = ST_MakePoint($1::float8, $2::float8)::geography, updated_at = NOW()
+WHERE id = $3 AND owner_id = $4
+`
+
+type UpdateRestaurantLocationParams struct {
+	Longitude float64
+	Latitude  float64
+	ID        int64
+	OwnerID   int64
+}
+
+func (q *Queries) UpdateRestaurantLocation(ctx context.Context, arg UpdateRestaurantLocationParams) error {
+	_, err := q.db.Exec(ctx, updateRestaurantLocation,
+		arg.Longitude,
+		arg.Latitude,
+		arg.ID,
+		arg.OwnerID,
+	)
+	return err
 }
 
 const updateRestaurantPublished = `-- name: UpdateRestaurantPublished :one

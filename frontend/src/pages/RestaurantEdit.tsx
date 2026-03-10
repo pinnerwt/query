@@ -1,29 +1,63 @@
-import { useState, useEffect } from 'preact/hooks';
-import { getRestaurant, updateRestaurant, publishRestaurant, getQRUrl } from '../lib/api';
-import type { Restaurant } from '../lib/api';
+import { useState, useEffect, useCallback } from 'preact/hooks';
+import {
+  getRestaurant, updateRestaurant, publishRestaurant, getQRUrl,
+  getRestaurantHours, setRestaurantHours,
+  getRestaurantLocation, setRestaurantLocation,
+} from '../lib/api';
+import type { Restaurant, RestaurantHour } from '../lib/api';
 import type { RoutableProps } from '../lib/route';
 import Toggle from '../components/Toggle';
 import { SkeletonList } from '../components/Skeleton';
+import HoursGrid from '../components/HoursGrid';
+import MapPicker from '../components/MapPicker';
 
 export default function RestaurantEdit({ id = '' }: RoutableProps & { id?: string }) {
   const rid = parseInt(id);
   const [rest, setRest] = useState<Restaurant | null>(null);
   const [form, setForm] = useState({
-    name: '', address: '', phone_number: '', website: '',
+    name: '', phone_number: '', website: '',
     dine_in: true, takeout: false, delivery: false, minimum_spend: 0,
   });
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
 
+  // Hours state
+  const [hours, setHours] = useState<RestaurantHour[]>([]);
+  const [savedHours, setSavedHours] = useState<RestaurantHour[]>([]);
+  const [savingHours, setSavingHours] = useState(false);
+  const [hoursMsg, setHoursMsg] = useState('');
+  const hoursDirty = JSON.stringify(hours) !== JSON.stringify(savedHours);
+
+  // Location + address state
+  const [address, setAddress] = useState('');
+  const [savedAddress, setSavedAddress] = useState('');
+  const [lat, setLat] = useState<number | null>(null);
+  const [lng, setLng] = useState<number | null>(null);
+  const [savedLat, setSavedLat] = useState<number | null>(null);
+  const [savedLng, setSavedLng] = useState<number | null>(null);
+  const [savingLocation, setSavingLocation] = useState(false);
+  const [locationMsg, setLocationMsg] = useState('');
+  const locationDirty = lat !== savedLat || lng !== savedLng || address !== savedAddress;
+
   useEffect(() => {
     getRestaurant(rid).then((r) => {
       setRest(r);
       setForm({
-        name: r.name, address: r.address || '', phone_number: r.phone_number || '',
+        name: r.name, phone_number: r.phone_number || '',
         website: r.website || '', dine_in: r.dine_in, takeout: r.takeout,
         delivery: r.delivery, minimum_spend: r.minimum_spend || 0,
       });
+      const addr = r.address || '';
+      setAddress(addr);
+      setSavedAddress(addr);
     });
+    getRestaurantHours(rid).then((h) => { setHours(h); setSavedHours(h); }).catch(() => {});
+    getRestaurantLocation(rid).then((loc) => {
+      setLat(loc.latitude);
+      setLng(loc.longitude);
+      setSavedLat(loc.latitude);
+      setSavedLng(loc.longitude);
+    }).catch(() => {});
   }, [rid]);
 
   const save = async (e: Event) => {
@@ -31,7 +65,7 @@ export default function RestaurantEdit({ id = '' }: RoutableProps & { id?: strin
     if (saving) return;
     setSaving(true);
     try {
-      const updated = await updateRestaurant(rid, form);
+      const updated = await updateRestaurant(rid, { ...form, address });
       setRest(updated);
     } catch {}
     setSaving(false);
@@ -47,6 +81,67 @@ export default function RestaurantEdit({ id = '' }: RoutableProps & { id?: strin
       setPublishing(false);
     }
   };
+
+  const handleHoursGridChange = useCallback((newHours: RestaurantHour[]) => {
+    setHours(newHours);
+  }, []);
+
+  const handleHoursSave = useCallback(async () => {
+    setSavingHours(true);
+    try {
+      await setRestaurantHours(rid, hours);
+      setSavedHours(hours);
+      setHoursMsg('已儲存');
+      setTimeout(() => setHoursMsg(''), 1500);
+    } catch {
+      setHoursMsg('儲存失敗');
+    }
+    setSavingHours(false);
+  }, [rid, hours]);
+
+  const geocodeAddress = useCallback((addr: string) => {
+    if (!addr.trim()) return;
+    fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(addr)}&format=json&limit=1&accept-language=zh-TW`)
+      .then((r) => r.json())
+      .then((results) => {
+        if (results.length > 0) {
+          setLat(parseFloat(results[0].lat));
+          setLng(parseFloat(results[0].lon));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleLocationChange = useCallback((newLat: number, newLng: number) => {
+    setLat(newLat);
+    setLng(newLng);
+    // Reverse geocode to fill address
+    fetch(`https://nominatim.openstreetmap.org/reverse?lat=${newLat}&lon=${newLng}&format=json&accept-language=zh-TW`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.display_name) setAddress(data.display_name);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleLocationSave = useCallback(async () => {
+    if (lat == null || lng == null) return;
+    setSavingLocation(true);
+    try {
+      await Promise.all([
+        setRestaurantLocation(rid, lat, lng),
+        updateRestaurant(rid, { ...form, address }),
+      ]);
+      setSavedLat(lat);
+      setSavedLng(lng);
+      setSavedAddress(address);
+      setLocationMsg('已儲存');
+      setTimeout(() => setLocationMsg(''), 1500);
+    } catch {
+      setLocationMsg('儲存失敗');
+    }
+    setSavingLocation(false);
+  }, [rid, lat, lng, address, form]);
 
   const inputClass =
     'w-full bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-colors';
@@ -105,10 +200,6 @@ export default function RestaurantEdit({ id = '' }: RoutableProps & { id?: strin
             <label class="block text-sm font-medium text-slate-600 mb-1.5">名稱</label>
             <input type="text" value={form.name} onInput={(e) => setForm({ ...form, name: (e.target as HTMLInputElement).value })} class={inputClass} required />
           </div>
-          <div>
-            <label class="block text-sm font-medium text-slate-600 mb-1.5">地址</label>
-            <input type="text" value={form.address} onInput={(e) => setForm({ ...form, address: (e.target as HTMLInputElement).value })} class={inputClass} />
-          </div>
         </div>
 
         {/* Contact */}
@@ -147,6 +238,43 @@ export default function RestaurantEdit({ id = '' }: RoutableProps & { id?: strin
           {saving ? '儲存中...' : '儲存設定'}
         </button>
       </form>
+
+      {/* Opening Hours */}
+      <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+        <HoursGrid
+          hours={hours}
+          dirty={hoursDirty}
+          onGridChange={handleHoursGridChange}
+          onSave={handleHoursSave}
+          saving={savingHours}
+          message={hoursMsg}
+        />
+      </div>
+
+      {/* Location & Address */}
+      <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-600 mb-1.5">地址</label>
+          <input
+            type="text"
+            value={address}
+            onInput={(e) => setAddress((e.target as HTMLInputElement).value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); geocodeAddress(address); } }}
+            class={inputClass}
+            placeholder="輸入地址後按 Enter 定位"
+          />
+          <p class="text-xs text-slate-400 mt-1">輸入地址或地名按 Enter 可快速定位，再拖曳標記微調</p>
+        </div>
+        <MapPicker
+          latitude={lat}
+          longitude={lng}
+          dirty={locationDirty}
+          onChange={handleLocationChange}
+          onSave={handleLocationSave}
+          saving={savingLocation}
+          message={locationMsg}
+        />
+      </div>
     </div>
   );
 }

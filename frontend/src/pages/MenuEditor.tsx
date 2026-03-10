@@ -23,7 +23,11 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
 
   useEffect(() => {
     getMenu(rid)
-      .then((m) => { setMenu(m); setSavedMenu(m); })
+      .then((m) => {
+        const safe = { categories: m?.categories || [], combos: m?.combos || [] };
+        setMenu(safe);
+        setSavedMenu(safe);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [rid]);
@@ -111,8 +115,9 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
     setMsg('OCR 辨識中，請稍候...');
     try {
       const result = await triggerOCR(rid);
-      setMenu(result);
-      setSavedMenu(result);
+      const safe = { categories: result?.categories || [], combos: result?.combos || [] };
+      setMenu(safe);
+      setSavedMenu(safe);
       setMsg('OCR 完成！請檢查並修正菜單內容');
     } catch (err: any) {
       setMsg('OCR 失敗: ' + err.message);

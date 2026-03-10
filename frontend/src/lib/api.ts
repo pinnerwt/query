@@ -160,10 +160,28 @@ export const publishRestaurant = (id: number, is_published: boolean) =>
   });
 
 // Hours
+export const getRestaurantHours = (id: number) =>
+  request<{ hours: RestaurantHour[] }>(`/restaurants/${id}/hours`).then((r) => r.hours);
+
 export const setRestaurantHours = (id: number, hours: RestaurantHour[]) =>
   request<void>(`/restaurants/${id}/hours`, {
     method: 'PUT',
     body: JSON.stringify({ hours }),
+  });
+
+// Location
+export interface RestaurantLocation {
+  latitude: number | null;
+  longitude: number | null;
+}
+
+export const getRestaurantLocation = (id: number) =>
+  request<RestaurantLocation>(`/restaurants/${id}/location`);
+
+export const setRestaurantLocation = (id: number, latitude: number, longitude: number) =>
+  request<void>(`/restaurants/${id}/location`, {
+    method: 'PUT',
+    body: JSON.stringify({ latitude, longitude }),
   });
 
 // Menu
