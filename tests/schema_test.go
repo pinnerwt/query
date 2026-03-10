@@ -205,6 +205,32 @@ func insertRestaurantDetails(t *testing.T, conn *pgx.Conn, ctx context.Context, 
 	return id
 }
 
+// insertOwner creates an owner and returns its ID.
+func insertOwner(t *testing.T, conn *pgx.Conn, ctx context.Context, email string) int64 {
+	t.Helper()
+	var id int64
+	err := conn.QueryRow(ctx, `
+		INSERT INTO owners (email, password_hash, name)
+		VALUES ($1, '$2a$10$dummy', 'Test Owner')
+		RETURNING id
+	`, email).Scan(&id)
+	require.NoError(t, err)
+	return id
+}
+
+// insertRestaurant creates a restaurant (for new schema) and returns its ID.
+func insertRestaurant(t *testing.T, conn *pgx.Conn, ctx context.Context, ownerID int64, name, slug string) int64 {
+	t.Helper()
+	var id int64
+	err := conn.QueryRow(ctx, `
+		INSERT INTO restaurants (owner_id, name, slug)
+		VALUES ($1, $2, $3)
+		RETURNING id
+	`, ownerID, name, slug).Scan(&id)
+	require.NoError(t, err)
+	return id
+}
+
 func TestRestaurantDetails(t *testing.T) {
 	conn := dbtest.SetupTestDB(t)
 	ctx := context.Background()
@@ -310,8 +336,8 @@ func TestMenuCategories(t *testing.T) {
 	conn := dbtest.SetupTestDB(t)
 	ctx := context.Background()
 
-	placeID := insertPlace(t, conn, ctx, "menu_cat_test", "Category Test Place")
-	restID := insertRestaurantDetails(t, conn, ctx, placeID)
+	ownerID := insertOwner(t, conn, ctx, "menucat@test.com")
+	restID := insertRestaurant(t, conn, ctx, ownerID, "Category Test Place", "cat-test")
 
 	// Insert categories with sort_order
 	_, err := conn.Exec(ctx, `
@@ -330,8 +356,8 @@ func TestMenuCategories(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 3, count)
 
-	// Verify FK cascade from restaurant_details
-	_, err = conn.Exec(ctx, `DELETE FROM restaurant_details WHERE id = $1`, restID)
+	// Verify FK cascade from restaurants
+	_, err = conn.Exec(ctx, `DELETE FROM restaurants WHERE id = $1`, restID)
 	require.NoError(t, err)
 
 	err = conn.QueryRow(ctx, `
@@ -345,8 +371,8 @@ func TestMenuItems(t *testing.T) {
 	conn := dbtest.SetupTestDB(t)
 	ctx := context.Background()
 
-	placeID := insertPlace(t, conn, ctx, "menu_item_test", "Item Test Place")
-	restID := insertRestaurantDetails(t, conn, ctx, placeID)
+	ownerID := insertOwner(t, conn, ctx, "menuitem@test.com")
+	restID := insertRestaurant(t, conn, ctx, ownerID, "Item Test Place", "item-test")
 
 	// Create a category
 	var catID int64
@@ -390,8 +416,8 @@ func TestComboMeals(t *testing.T) {
 	conn := dbtest.SetupTestDB(t)
 	ctx := context.Background()
 
-	placeID := insertPlace(t, conn, ctx, "combo_test", "Combo Test Place")
-	restID := insertRestaurantDetails(t, conn, ctx, placeID)
+	ownerID := insertOwner(t, conn, ctx, "combo@test.com")
+	restID := insertRestaurant(t, conn, ctx, ownerID, "Combo Test Place", "combo-test")
 
 	// Create a combo meal
 	var comboID int64
@@ -419,7 +445,7 @@ func TestComboMeals(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify full chain cascade delete — delete restaurant cascades all the way
-	_, err = conn.Exec(ctx, `DELETE FROM restaurant_details WHERE id = $1`, restID)
+	_, err = conn.Exec(ctx, `DELETE FROM restaurants WHERE id = $1`, restID)
 	require.NoError(t, err)
 
 	var count int
@@ -440,8 +466,8 @@ func TestComboMealGroupOptions(t *testing.T) {
 	conn := dbtest.SetupTestDB(t)
 	ctx := context.Background()
 
-	placeID := insertPlace(t, conn, ctx, "combo_opt_test", "Combo Opt Test Place")
-	restID := insertRestaurantDetails(t, conn, ctx, placeID)
+	ownerID := insertOwner(t, conn, ctx, "comboopt@test.com")
+	restID := insertRestaurant(t, conn, ctx, ownerID, "Combo Opt Test Place", "comboopt-test")
 
 	// Create a menu item to reference
 	var menuItemID int64
@@ -511,8 +537,8 @@ func TestPriceTiers(t *testing.T) {
 	conn := dbtest.SetupTestDB(t)
 	ctx := context.Background()
 
-	placeID := insertPlace(t, conn, ctx, "tier_test", "Tier Test Place")
-	restID := insertRestaurantDetails(t, conn, ctx, placeID)
+	ownerID := insertOwner(t, conn, ctx, "tier@test.com")
+	restID := insertRestaurant(t, conn, ctx, ownerID, "Tier Test Place", "tier-test")
 
 	// Create a menu item
 	var itemID int64
@@ -549,8 +575,8 @@ func TestAddOns(t *testing.T) {
 	conn := dbtest.SetupTestDB(t)
 	ctx := context.Background()
 
-	placeID := insertPlace(t, conn, ctx, "addon_test", "Add-on Test Place")
-	restID := insertRestaurantDetails(t, conn, ctx, placeID)
+	ownerID := insertOwner(t, conn, ctx, "addon@test.com")
+	restID := insertRestaurant(t, conn, ctx, ownerID, "Add-on Test Place", "addon-test")
 
 	// Insert add-ons
 	_, err := conn.Exec(ctx, `
@@ -569,7 +595,7 @@ func TestAddOns(t *testing.T) {
 	assert.Equal(t, 2, count)
 
 	// Verify FK cascade
-	_, err = conn.Exec(ctx, `DELETE FROM restaurant_details WHERE id = $1`, restID)
+	_, err = conn.Exec(ctx, `DELETE FROM restaurants WHERE id = $1`, restID)
 	require.NoError(t, err)
 
 	err = conn.QueryRow(ctx, `

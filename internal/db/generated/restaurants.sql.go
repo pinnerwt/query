@@ -76,19 +76,17 @@ func (q *Queries) GetRestaurantDetailsByPlaceID(ctx context.Context, placeID int
 }
 
 const listRestaurantsWithMenus = `-- name: ListRestaurantsWithMenus :many
-SELECT p.id AS place_id, p.google_place_id, p.name, p.address, rd.id AS restaurant_id
-FROM places p
-JOIN restaurant_details rd ON rd.place_id = p.id
-WHERE EXISTS (SELECT 1 FROM menu_items mi WHERE mi.restaurant_id = rd.id)
-ORDER BY p.name
+SELECT r.id AS restaurant_id, r.name, r.address, r.slug
+FROM restaurants r
+WHERE EXISTS (SELECT 1 FROM menu_items mi WHERE mi.restaurant_id = r.id)
+ORDER BY r.name
 `
 
 type ListRestaurantsWithMenusRow struct {
-	PlaceID       int64
-	GooglePlaceID string
-	Name          string
-	Address       pgtype.Text
-	RestaurantID  int64
+	RestaurantID int64
+	Name         string
+	Address      pgtype.Text
+	Slug         string
 }
 
 func (q *Queries) ListRestaurantsWithMenus(ctx context.Context) ([]ListRestaurantsWithMenusRow, error) {
@@ -101,11 +99,10 @@ func (q *Queries) ListRestaurantsWithMenus(ctx context.Context) ([]ListRestauran
 	for rows.Next() {
 		var i ListRestaurantsWithMenusRow
 		if err := rows.Scan(
-			&i.PlaceID,
-			&i.GooglePlaceID,
+			&i.RestaurantID,
 			&i.Name,
 			&i.Address,
-			&i.RestaurantID,
+			&i.Slug,
 		); err != nil {
 			return nil, err
 		}

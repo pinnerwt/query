@@ -76,3 +76,28 @@ SELECT * FROM combo_meal_groups WHERE combo_meal_id = $1 ORDER BY sort_order;
 
 -- name: ListComboMealGroupOptionsByGroup :many
 SELECT * FROM combo_meal_group_options WHERE group_id = $1 ORDER BY sort_order;
+
+-- name: GetMenuItemByID :one
+SELECT * FROM menu_items WHERE id = $1;
+
+-- name: UpdateMenuCategory :one
+UPDATE menu_categories SET name = @name, sort_order = @sort_order
+WHERE id = @id
+RETURNING *;
+
+-- name: DeleteMenuCategory :exec
+DELETE FROM menu_categories WHERE id = $1;
+
+-- name: UpdateMenuItem :one
+UPDATE menu_items SET
+    name = @name,
+    description = @description,
+    price = @price,
+    category_id = @category_id,
+    is_available = @is_available,
+    updated_at = NOW()
+WHERE id = @id
+RETURNING *;
+
+-- name: DeleteMenuItem :exec
+DELETE FROM menu_items WHERE id = $1;

@@ -18,8 +18,14 @@ go test ./tests
 # Run a single test
 go test ./tests -run TestSchemaPlaces
 
-# Build the server
+# Build all binaries
+go build ./cmd/server && go build ./cmd/ocr && go build ./cmd/seed
+
+# Build the server (includes embedded frontend)
 go build ./cmd/server
+
+# Build the frontend (must run before building server)
+cd frontend && npm install && npm run build
 
 # Regenerate sqlc code after changing SQL queries or migrations
 sqlc generate
@@ -29,6 +35,10 @@ goose -dir migrations postgres "connection-string" up
 
 # Start local PostgreSQL (primary + replica)
 cd deploy && cp .env.example .env && docker compose up -d
+
+# Run the server
+./server --db "postgres://query:query@localhost:5432/query?sslmode=disable"
+./server --db "..." --jwt-secret "my-secret" --base-url "https://mydomain.com" --addr ":8080"
 
 # Build and run the seed CLI (Step 1: discovery, free)
 go build -o seed ./cmd/seed
@@ -88,34 +98,56 @@ go build -o ocr ./cmd/ocr
 
 ## Architecture
 
-Go 1.25.0 project — a restaurant/place database backed by PostgreSQL.
+Go 1.25.0 project — an owner-facing restaurant menu platform backed by PostgreSQL + PostGIS. Owners register, create restaurants, upload menu photos (OCR extracts structured data), and get a QR code + public ordering page.
 
 **Database-first workflow**: Define schema in `migrations/` (Goose), write queries in `internal/db/queries/*.sql`, then run `sqlc generate` to produce Go code in `internal/db/generated/`. Never edit generated files directly.
 
 **Key layers**:
-- `migrations/` — Goose migration files defining the PostgreSQL schema
-- `internal/db/queries/` — Raw SQL files consumed by sqlc (one file per domain: places, restaurants, menu)
+- `migrations/` — Goose migration files (PostGIS-enabled). Migration 00006 is the owner-app migration that creates owners, restaurants, orders tables and re-points menu FKs.
+- `internal/db/queries/` — Raw SQL files consumed by sqlc (one file per domain: places, owners, owner_restaurants, menu, orders, menu_uploads)
 - `internal/db/generated/` — Auto-generated Go code from sqlc (models, query methods). Do not edit.
-- `internal/db/dbtest/` — Test helper that spins up a PostgreSQL container via testcontainers-go and runs migrations with Goose
-- `tests/` — Integration tests against real PostgreSQL containers
-- `cmd/server/` — Server entry point (placeholder)
+- `internal/db/dbtest/` — Test helper that spins up a PostGIS container via testcontainers-go and runs migrations with Goose
+- `tests/` — Integration tests against real PostgreSQL containers (schema, queries, auth, restaurant CRUD, menu CRUD, orders, migration)
+- `cmd/server/` — HTTP server with all API endpoints: auth (JWT), restaurant CRUD, menu editor, photo upload + OCR, QR codes, ordering, public menu pages. Frontend embedded via `//go:embed`. Uses Go 1.25 ServeMux pattern matching.
 - `cmd/seed/` — CLI for Step 1 discovery: hexagonal grid sweep with Google Places API, stores to staging tables. Supports checkpointing (`--checkpoint`) for resumable sweeps and auto-caps sub-radius at 50,000m (API limit). Max depth 23 (~17m radius) to avoid saturation. Rate limited to 8 req/s.
 - `cmd/fetch/` — CLI for Step 2 detail fetch: replays discovery queries with advanced fields, promotes to `places`/`place_opening_hours`
 - `cmd/scrape/` — CLI for scraping menu photos from Google Maps using headless Chrome (chromedp). Supports `--proxy` for SOCKS5/HTTP proxies. Forces `hl=zh-TW` so Chinese selectors work regardless of proxy region.
-- `cmd/ocr/` — CLI for menu extraction with two-pass pipeline: GLM-OCR (Ollama, GPU) for raw text, then per-photo normalization via Qwen3.5 (Ollama) into structured JSON, followed by merge/dedup across photos. Includes perceptual dedup to skip near-duplicate photos and image resizing (default 800px max). Writes to `menu_categories`/`menu_items`/`menu_item_price_tiers`/`combo_meals` tables. Takes a Google Place ID, reads photos from `menu_photos/<place_id>/`.
+- `cmd/ocr/` — Thin wrapper around `internal/ocr` package. Two-pass pipeline: GLM-OCR (Ollama, GPU) for raw text, then normalization via Qwen3.5 into structured JSON.
+- `internal/auth/` — bcrypt password hashing, JWT (HS256, 24h expiry) via `golang-jwt/jwt/v5`, auth middleware
+- `internal/ratelimit/` — Sliding window rate limiter (per-IP, in-memory)
+- `internal/slug/` — URL-safe slug generation from restaurant names (CJK-aware, random hex suffix)
+- `internal/ocr/` — OCR pipeline (types, image processing, normalization, menu DB insertion). Extracted from cmd/ocr for reuse by server.
+- `internal/storage/` — File upload handling (saves to `menu_photos/{restaurant_id}/`)
 - `internal/seed/` — Google Places API client, grid sweep logic, geo helpers
+- `frontend/` — Preact + Vite + Tailwind CSS + TypeScript SPA. Pages: Login/Register, Dashboard, Restaurant Edit, Menu Editor (with OCR), Orders. Built to `frontend/dist/`, embedded in Go binary via `frontend_embed.go`.
+- `frontend_embed.go` — Root package file with `//go:embed frontend/dist` directive
+
+**Server endpoints** (`cmd/server/main.go`):
+- Auth: `POST /api/auth/register` (rate-limited), `POST /api/auth/login`, `GET /api/auth/me`
+- Restaurant CRUD (auth): `POST/GET/PUT/DELETE /api/restaurants/*`, `PUT .../hours`, `PUT .../publish`
+- Menu (auth): `GET/PUT /api/restaurants/{id}/menu`
+- Photos + OCR (auth): `POST /api/restaurants/{id}/menu-photos`, `POST /api/restaurants/{id}/ocr`
+- QR code (auth): `GET /api/restaurants/{id}/qr`
+- Orders (auth): `GET /api/restaurants/{id}/orders`, `PUT .../orders/{orderId}/status`
+- Public: `GET /api/public/menu/{slug}`, `POST /api/public/orders/{slug}`, `GET /api/public/orders/{slug}/{orderId}`
+- Public HTML: `GET /r/{slug}` (server-rendered menu + cart + ordering)
+- Frontend SPA: `/app/*` (embedded Preact app)
+- Legacy: `GET /api/restaurants`, `GET /api/menu`, `GET /api/places`
 
 **sqlc config** (`sqlc.yaml`): Uses `pgx/v5` as the SQL package. Queries dir is `internal/db/queries`, schema dir is `migrations`, output goes to `internal/db/generated`.
 
-**Testing**: Tests use testcontainers-go to create isolated PostgreSQL instances. The `dbtest.SetupTestDB()` helper handles container lifecycle and migration. Tests use testify for assertions.
+**Testing**: Tests use testcontainers-go to create isolated PostGIS instances. The `dbtest.SetupTestDB()` helper handles container lifecycle and migration. Tests use testify for assertions. Docker image: `postgis/postgis:16-3.4-alpine`.
 
-**Schema**: Places (Google Places integration) → Restaurant details (1:1) → Menu categories → Menu items, combo meals, add-ons. All foreign keys use CASCADE DELETE. Staging tables (`discovery_queries`, `place_discoveries`) hold intermediate discovery results before promotion.
+**Schema**: Two paths coexist:
+- Legacy: Places (Google Places) → Restaurant details (1:1) → Menu tables
+- Owner app: Owners → Restaurants (with slug, hours, publish state) → Menu tables, Orders → Order items
+- Menu tables (`menu_categories`, `menu_items`, `combo_meals`, `add_ons`) have `restaurant_id` FK pointing to `restaurants(id)`. Migration 00006 preserved IDs so existing data works with both paths.
 
 **Data pipeline** has four steps:
 1. `cmd/seed` — Discover places via free Google API calls, store in staging tables. Always use `--lang zh-TW` for Chinese names/addresses.
 2. `cmd/fetch` — Replay discovery queries with advanced field masks (~$0.035/query), promote to `places`/`place_opening_hours`. Always use `--lang zh-TW`.
 3. `cmd/scrape` — Scrape menu photos from Google Maps "菜單" tab via headless Chrome
-4. `cmd/ocr` — Two-pass menu extraction: GLM-OCR (Ollama GPU) reads photo text, then each photo is independently normalized into structured JSON by Qwen3.5 (Ollama), results are merged/deduped across photos, then inserted into `restaurant_details`/`menu_categories`/`menu_items`/`menu_item_price_tiers`/`combo_meals`
+4. `cmd/ocr` — Two-pass menu extraction: GLM-OCR (Ollama GPU) reads photo text, then combined text is normalized into structured JSON by Qwen3.5, then inserted into `restaurants`/`menu_categories`/`menu_items`/`menu_item_price_tiers`/`combo_meals`
 
 **Model setup** (RTX 3090, 24GB VRAM):
 - Ollama: `ollama pull glm-ocr` then create `glm-ocr-gpu` variant with `num_ctx 8192` for GPU loading. Run `ollama serve`.

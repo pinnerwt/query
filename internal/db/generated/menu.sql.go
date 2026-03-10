@@ -258,6 +258,24 @@ func (q *Queries) DeleteMenuCategoriesByRestaurant(ctx context.Context, restaura
 	return err
 }
 
+const deleteMenuCategory = `-- name: DeleteMenuCategory :exec
+DELETE FROM menu_categories WHERE id = $1
+`
+
+func (q *Queries) DeleteMenuCategory(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deleteMenuCategory, id)
+	return err
+}
+
+const deleteMenuItem = `-- name: DeleteMenuItem :exec
+DELETE FROM menu_items WHERE id = $1
+`
+
+func (q *Queries) DeleteMenuItem(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deleteMenuItem, id)
+	return err
+}
+
 const deleteMenuItemsByRestaurant = `-- name: DeleteMenuItemsByRestaurant :exec
 DELETE FROM menu_items WHERE restaurant_id = $1
 `
@@ -274,6 +292,28 @@ DELETE FROM menu_item_price_tiers WHERE menu_item_id = $1
 func (q *Queries) DeletePriceTiersByMenuItem(ctx context.Context, menuItemID int64) error {
 	_, err := q.db.Exec(ctx, deletePriceTiersByMenuItem, menuItemID)
 	return err
+}
+
+const getMenuItemByID = `-- name: GetMenuItemByID :one
+SELECT id, restaurant_id, category_id, name, description, price, is_available, photo_url, created_at, updated_at FROM menu_items WHERE id = $1
+`
+
+func (q *Queries) GetMenuItemByID(ctx context.Context, id int64) (MenuItem, error) {
+	row := q.db.QueryRow(ctx, getMenuItemByID, id)
+	var i MenuItem
+	err := row.Scan(
+		&i.ID,
+		&i.RestaurantID,
+		&i.CategoryID,
+		&i.Name,
+		&i.Description,
+		&i.Price,
+		&i.IsAvailable,
+		&i.PhotoUrl,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const listAddOnsByRestaurant = `-- name: ListAddOnsByRestaurant :many
@@ -533,6 +573,77 @@ func (q *Queries) ListPriceTiersByRestaurant(ctx context.Context, restaurantID i
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateMenuCategory = `-- name: UpdateMenuCategory :one
+UPDATE menu_categories SET name = $1, sort_order = $2
+WHERE id = $3
+RETURNING id, restaurant_id, name, sort_order, created_at
+`
+
+type UpdateMenuCategoryParams struct {
+	Name      string
+	SortOrder int32
+	ID        int64
+}
+
+func (q *Queries) UpdateMenuCategory(ctx context.Context, arg UpdateMenuCategoryParams) (MenuCategory, error) {
+	row := q.db.QueryRow(ctx, updateMenuCategory, arg.Name, arg.SortOrder, arg.ID)
+	var i MenuCategory
+	err := row.Scan(
+		&i.ID,
+		&i.RestaurantID,
+		&i.Name,
+		&i.SortOrder,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateMenuItem = `-- name: UpdateMenuItem :one
+UPDATE menu_items SET
+    name = $1,
+    description = $2,
+    price = $3,
+    category_id = $4,
+    is_available = $5,
+    updated_at = NOW()
+WHERE id = $6
+RETURNING id, restaurant_id, category_id, name, description, price, is_available, photo_url, created_at, updated_at
+`
+
+type UpdateMenuItemParams struct {
+	Name        string
+	Description pgtype.Text
+	Price       int32
+	CategoryID  pgtype.Int8
+	IsAvailable bool
+	ID          int64
+}
+
+func (q *Queries) UpdateMenuItem(ctx context.Context, arg UpdateMenuItemParams) (MenuItem, error) {
+	row := q.db.QueryRow(ctx, updateMenuItem,
+		arg.Name,
+		arg.Description,
+		arg.Price,
+		arg.CategoryID,
+		arg.IsAvailable,
+		arg.ID,
+	)
+	var i MenuItem
+	err := row.Scan(
+		&i.ID,
+		&i.RestaurantID,
+		&i.CategoryID,
+		&i.Name,
+		&i.Description,
+		&i.Price,
+		&i.IsAvailable,
+		&i.PhotoUrl,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const updateMenuItemPrice = `-- name: UpdateMenuItemPrice :one

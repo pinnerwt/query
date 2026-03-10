@@ -88,6 +88,48 @@ type MenuItemPriceTier struct {
 	CreatedAt  pgtype.Timestamptz
 }
 
+type MenuPhotoUpload struct {
+	ID           int64
+	RestaurantID int64
+	FilePath     string
+	FileName     string
+	OcrStatus    string
+	OcrText      pgtype.Text
+	CreatedAt    pgtype.Timestamptz
+}
+
+type Order struct {
+	ID           int64
+	RestaurantID int64
+	Status       string
+	TableLabel   pgtype.Text
+	TotalAmount  int32
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
+type OrderItem struct {
+	ID         int64
+	OrderID    int64
+	MenuItemID pgtype.Int8
+	ItemName   string
+	Quantity   int32
+	UnitPrice  int32
+	Notes      pgtype.Text
+	CreatedAt  pgtype.Timestamptz
+}
+
+type Owner struct {
+	ID           int64
+	Email        string
+	PasswordHash string
+	Name         string
+	Phone        pgtype.Text
+	IsVerified   bool
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
 type Place struct {
 	ID             int64
 	GooglePlaceID  string
@@ -140,6 +182,27 @@ type PlacePhoto struct {
 	CreatedAt            pgtype.Timestamptz
 }
 
+type Restaurant struct {
+	ID            int64
+	OwnerID       int64
+	Name          string
+	Slug          string
+	Address       pgtype.Text
+	Location      interface{}
+	PhoneNumber   pgtype.Text
+	Website       pgtype.Text
+	GooglePlaceID pgtype.Text
+	LogoUrl       pgtype.Text
+	CoverImageUrl pgtype.Text
+	DineIn        bool
+	Takeout       bool
+	Delivery      bool
+	MinimumSpend  pgtype.Int4
+	IsPublished   bool
+	CreatedAt     pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
+}
+
 type RestaurantDetail struct {
 	ID               int64
 	PlaceID          int64
@@ -150,6 +213,15 @@ type RestaurantDetail struct {
 	Delivery         bool
 	CreatedAt        pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz
+}
+
+type RestaurantHour struct {
+	ID           int64
+	RestaurantID int64
+	DayOfWeek    int16
+	OpenTime     pgtype.Time
+	CloseTime    pgtype.Time
+	CreatedAt    pgtype.Timestamptz
 }
 
 type RestaurantHoursOverride struct {

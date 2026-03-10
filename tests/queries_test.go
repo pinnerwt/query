@@ -95,28 +95,14 @@ func TestCreateRestaurantWithMenu(t *testing.T) {
 	ctx := context.Background()
 	q := db.New(conn)
 
-	// Create place
-	place, err := q.CreatePlace(ctx, db.CreatePlaceParams{
-		GooglePlaceID: "full_flow_test",
-		Name:          "Full Flow Restaurant",
-	})
-	require.NoError(t, err)
-
-	// Create restaurant_details
-	rest, err := q.CreateRestaurantDetails(ctx, db.CreateRestaurantDetailsParams{
-		PlaceID:          place.ID,
-		MinimumSpend:     pgtype.Int4{Int32: 150, Valid: true},
-		TimeLimitMinutes: pgtype.Int4{Int32: 90, Valid: true},
-		DineIn:           true,
-		Takeout:          true,
-		Delivery:         false,
-	})
-	require.NoError(t, err)
-	assert.Positive(t, rest.ID)
+	// Create owner + restaurant (new schema)
+	ownerID := insertOwner(t, conn, ctx, "fullflow@test.com")
+	restID := insertRestaurant(t, conn, ctx, ownerID, "Full Flow Restaurant", "full-flow")
+	assert.Positive(t, restID)
 
 	// Create category
 	cat, err := q.CreateMenuCategory(ctx, db.CreateMenuCategoryParams{
-		RestaurantID: rest.ID,
+		RestaurantID: restID,
 		Name:         "主餐",
 		SortOrder:    1,
 	})
@@ -124,7 +110,7 @@ func TestCreateRestaurantWithMenu(t *testing.T) {
 
 	// Create menu item
 	item, err := q.CreateMenuItem(ctx, db.CreateMenuItemParams{
-		RestaurantID: rest.ID,
+		RestaurantID: restID,
 		CategoryID:   pgtype.Int8{Int64: cat.ID, Valid: true},
 		Name:         "牛肉麵",
 		Description:  pgtype.Text{String: "Beef noodle soup", Valid: true},
@@ -135,7 +121,7 @@ func TestCreateRestaurantWithMenu(t *testing.T) {
 
 	// Create combo
 	combo, err := q.CreateComboMeal(ctx, db.CreateComboMealParams{
-		RestaurantID: rest.ID,
+		RestaurantID: restID,
 		Name:         "午間套餐",
 		Description:  pgtype.Text{String: "Lunch combo", Valid: true},
 		Price:        350,
@@ -163,7 +149,7 @@ func TestCreateRestaurantWithMenu(t *testing.T) {
 
 	// Create add-on
 	addon, err := q.CreateAddOn(ctx, db.CreateAddOnParams{
-		RestaurantID: rest.ID,
+		RestaurantID: restID,
 		Name:         "加蛋",
 		Price:        15,
 	})
@@ -171,11 +157,11 @@ func TestCreateRestaurantWithMenu(t *testing.T) {
 	assert.Equal(t, "加蛋", addon.Name)
 
 	// Query full restaurant menu
-	items, err := q.ListMenuItemsByRestaurant(ctx, rest.ID)
+	items, err := q.ListMenuItemsByRestaurant(ctx, restID)
 	require.NoError(t, err)
 	assert.Len(t, items, 1)
 
-	addons, err := q.ListAddOnsByRestaurant(ctx, rest.ID)
+	addons, err := q.ListAddOnsByRestaurant(ctx, restID)
 	require.NoError(t, err)
 	assert.Len(t, addons, 1)
 }
@@ -186,20 +172,11 @@ func TestUpdateMenuItemPrice(t *testing.T) {
 	q := db.New(conn)
 
 	// Setup
-	place, err := q.CreatePlace(ctx, db.CreatePlaceParams{
-		GooglePlaceID: "update_price_test",
-		Name:          "Price Update Place",
-	})
-	require.NoError(t, err)
-
-	rest, err := q.CreateRestaurantDetails(ctx, db.CreateRestaurantDetailsParams{
-		PlaceID: place.ID,
-		DineIn:  true,
-	})
-	require.NoError(t, err)
+	ownerID := insertOwner(t, conn, ctx, "updateprice@test.com")
+	restID := insertRestaurant(t, conn, ctx, ownerID, "Price Update Place", "price-update")
 
 	item, err := q.CreateMenuItem(ctx, db.CreateMenuItemParams{
-		RestaurantID: rest.ID,
+		RestaurantID: restID,
 		Name:         "拉麵",
 		Price:        200,
 	})

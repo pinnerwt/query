@@ -25,7 +25,7 @@ func SetupTestDB(t *testing.T) *pgx.Conn {
 	ctx := context.Background()
 
 	pgContainer, err := postgres.Run(ctx,
-		"postgres:16-alpine",
+		"postgis/postgis:16-3.4-alpine",
 		postgres.WithDatabase("testdb"),
 		postgres.WithUsername("testuser"),
 		postgres.WithPassword("testpass"),
