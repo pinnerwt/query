@@ -57,6 +57,7 @@ export interface MenuItem {
   is_available: boolean;
   category_id: number;
   price_tiers?: PriceTier[];
+  option_groups?: OptionGroup[];
 }
 
 export interface PriceTier {
@@ -65,31 +66,20 @@ export interface PriceTier {
   price: number;
 }
 
-export interface ComboMeal {
-  id: number;
-  name: string;
-  description: string;
-  price: number;
-  groups: ComboGroup[];
-}
-
-export interface ComboGroup {
-  id: number;
+export interface OptionGroup {
   name: string;
   min_choices: number;
   max_choices: number;
-  options: ComboOption[];
+  options: OptionChoice[];
 }
 
-export interface ComboOption {
-  id: number;
-  item_name: string;
+export interface OptionChoice {
+  name: string;
   price_adjustment: number;
 }
 
 export interface MenuData {
   categories: MenuCategory[];
-  combos: ComboMeal[];
 }
 
 export interface RestaurantHour {
