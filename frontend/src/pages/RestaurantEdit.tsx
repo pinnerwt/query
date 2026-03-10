@@ -40,7 +40,11 @@ export default function RestaurantEdit({ id = '' }: RoutableProps & { id?: strin
   const locationDirty = lat !== savedLat || lng !== savedLng || address !== savedAddress;
 
   useEffect(() => {
-    getRestaurant(rid).then((r) => {
+    Promise.all([
+      getRestaurant(rid),
+      getRestaurantHours(rid).catch(() => [] as RestaurantHour[]),
+      getRestaurantLocation(rid).catch(() => null),
+    ]).then(([r, h, loc]) => {
       setRest(r);
       setForm({
         name: r.name, phone_number: r.phone_number || '',
@@ -50,14 +54,15 @@ export default function RestaurantEdit({ id = '' }: RoutableProps & { id?: strin
       const addr = r.address || '';
       setAddress(addr);
       setSavedAddress(addr);
+      setHours(h);
+      setSavedHours(h);
+      if (loc) {
+        setLat(loc.latitude);
+        setLng(loc.longitude);
+        setSavedLat(loc.latitude);
+        setSavedLng(loc.longitude);
+      }
     });
-    getRestaurantHours(rid).then((h) => { setHours(h); setSavedHours(h); }).catch(() => {});
-    getRestaurantLocation(rid).then((loc) => {
-      setLat(loc.latitude);
-      setLng(loc.longitude);
-      setSavedLat(loc.latitude);
-      setSavedLng(loc.longitude);
-    }).catch(() => {});
   }, [rid]);
 
   const save = async (e: Event) => {

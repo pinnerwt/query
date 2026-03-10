@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'preact/hooks';
+import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import { listOrders, updateOrderStatus } from '../lib/api';
 import type { Order } from '../lib/api';
 import type { RoutableProps } from '../lib/route';
@@ -29,6 +29,46 @@ const NEXT_STATUS: Record<string, string> = {
 
 const KANBAN_COLUMNS = ['pending', 'confirmed', 'preparing', 'completed'] as const;
 
+interface OrderCardProps {
+  order: Order;
+  updatingId: number | null;
+  onAdvance: (o: Order) => void;
+  onCancel: (o: Order) => void;
+}
+
+function OrderCard({ order: o, updatingId, onAdvance, onCancel }: OrderCardProps) {
+  return (
+    <div class={`bg-white rounded-lg shadow-sm border-l-4 ${STATUS_COLORS[o.status] || 'border-l-slate-200'} border border-slate-100 p-3`}>
+      <div class="flex items-center justify-between mb-2">
+        <span class="font-mono text-xs text-slate-400">#{o.id}</span>
+        <span class="text-xs text-slate-400">{relativeTime(o.created_at)}</span>
+      </div>
+      {o.table_label && <p class="text-sm font-medium text-slate-800 mb-1">桌號 {o.table_label}</p>}
+      <p class="font-bold text-slate-800 text-lg">${o.total_amount} 元</p>
+      {o.status !== 'completed' && o.status !== 'cancelled' && (
+        <div class="flex gap-2 mt-3">
+          {NEXT_STATUS[o.status] && (
+            <button
+              onClick={() => onAdvance(o)}
+              disabled={updatingId === o.id}
+              class={`flex-1 text-white text-xs py-1.5 rounded-lg font-medium disabled:opacity-50 transition-colors ${ACTION_COLORS[o.status]}`}
+            >
+              {updatingId === o.id ? '...' : STATUS_LABELS[NEXT_STATUS[o.status]]}
+            </button>
+          )}
+          <button
+            onClick={() => onCancel(o)}
+            disabled={updatingId === o.id}
+            class="text-xs text-red-500 hover:text-red-600 px-2 disabled:opacity-50"
+          >
+            取消
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function relativeTime(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
@@ -47,18 +87,18 @@ export default function Orders({ id = '' }: RoutableProps & { id?: string }) {
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval>>();
 
-  const load = () => {
+  const load = useCallback(() => {
     listOrders(rid)
       .then(setOrders)
       .catch(() => {})
       .finally(() => setLoading(false));
-  };
+  }, [rid]);
 
   useEffect(() => {
     load();
     timerRef.current = setInterval(load, 10000);
     return () => clearInterval(timerRef.current);
-  }, [rid]);
+  }, [load]);
 
   const advance = async (order: Order) => {
     const next = NEXT_STATUS[order.status];
@@ -89,37 +129,6 @@ export default function Orders({ id = '' }: RoutableProps & { id?: string }) {
   // Mobile: filtered list
   const filteredOrders = filter ? orders.filter((o) => o.status === filter) : orders;
 
-  const renderOrderCard = (o: Order, compact = false) => (
-    <div key={o.id} class={`bg-white rounded-lg shadow-sm border-l-4 ${STATUS_COLORS[o.status] || 'border-l-slate-200'} border border-slate-100 p-3`}>
-      <div class="flex items-center justify-between mb-2">
-        <span class="font-mono text-xs text-slate-400">#{o.id}</span>
-        <span class="text-xs text-slate-400">{relativeTime(o.created_at)}</span>
-      </div>
-      {o.table_label && <p class="text-sm font-medium text-slate-800 mb-1">桌號 {o.table_label}</p>}
-      <p class={`font-bold text-slate-800 ${compact ? 'text-base' : 'text-lg'}`}>${o.total_amount} 元</p>
-      {!compact && o.status !== 'completed' && o.status !== 'cancelled' && (
-        <div class="flex gap-2 mt-3">
-          {NEXT_STATUS[o.status] && (
-            <button
-              onClick={() => advance(o)}
-              disabled={updatingId === o.id}
-              class={`flex-1 text-white text-xs py-1.5 rounded-lg font-medium disabled:opacity-50 transition-colors ${ACTION_COLORS[o.status]}`}
-            >
-              {updatingId === o.id ? '...' : STATUS_LABELS[NEXT_STATUS[o.status]]}
-            </button>
-          )}
-          <button
-            onClick={() => cancel(o)}
-            disabled={updatingId === o.id}
-            class="text-xs text-red-500 hover:text-red-600 px-2 disabled:opacity-50"
-          >
-            取消
-          </button>
-        </div>
-      )}
-    </div>
-  );
-
   if (loading) return <div class="max-w-5xl mx-auto"><SkeletonList rows={4} /></div>;
 
   return (
@@ -146,7 +155,7 @@ export default function Orders({ id = '' }: RoutableProps & { id?: string }) {
               </div>
               <div class="flex-1 overflow-y-auto p-3 space-y-2">
                 {col.length === 0 && <p class="text-xs text-slate-400 text-center py-4">沒有訂單</p>}
-                {col.map((o) => renderOrderCard(o))}
+                {col.map((o) => <OrderCard key={o.id} order={o} updatingId={updatingId} onAdvance={advance} onCancel={cancel} />)}
               </div>
             </div>
           );
@@ -172,7 +181,7 @@ export default function Orders({ id = '' }: RoutableProps & { id?: string }) {
           <p class="text-slate-400 text-center py-8">沒有訂單</p>
         ) : (
           <div class="space-y-2">
-            {filteredOrders.map((o) => renderOrderCard(o))}
+            {filteredOrders.map((o) => <OrderCard key={o.id} order={o} updatingId={updatingId} onAdvance={advance} onCancel={cancel} />)}
           </div>
         )}
       </div>

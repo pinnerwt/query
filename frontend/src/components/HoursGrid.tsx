@@ -233,20 +233,27 @@ export default function HoursGrid({ hours, dirty, onGridChange, onSave, saving, 
         </div>
       </div>
       {/* Summary */}
-      {hours.length > 0 && (
-        <div class="mt-3 space-y-1">
-          {DAY_LABELS.map((label, day) => {
-            const dayHours = hours.filter((h) => h.day_of_week === day);
-            if (dayHours.length === 0) return null;
-            return (
-              <div key={day} class="flex items-center gap-2 text-xs text-slate-600">
-                <span class="font-medium w-8">{label}</span>
-                <span>{dayHours.map((h) => `${h.open_time}–${h.close_time === '00:00' ? '24:00' : h.close_time}`).join(', ')}</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {hours.length > 0 && (() => {
+        const byDay = new Map<number, RestaurantHour[]>();
+        for (const h of hours) {
+          const arr = byDay.get(h.day_of_week);
+          if (arr) arr.push(h); else byDay.set(h.day_of_week, [h]);
+        }
+        return (
+          <div class="mt-3 space-y-1">
+            {DAY_LABELS.map((label, day) => {
+              const dayHours = byDay.get(day);
+              if (!dayHours) return null;
+              return (
+                <div key={day} class="flex items-center gap-2 text-xs text-slate-600">
+                  <span class="font-medium w-8">{label}</span>
+                  <span>{dayHours.map((h) => `${h.open_time}–${h.close_time === '00:00' ? '24:00' : h.close_time}`).join(', ')}</span>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
       {/* Save bar */}
       <div class="flex items-center justify-between mt-4 h-8">
         <span class="text-xs text-amber-600">{message}</span>
