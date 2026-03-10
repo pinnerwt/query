@@ -119,51 +119,45 @@ func TestCreateRestaurantWithMenu(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int32(250), item.Price)
 
-	// Create combo
-	combo, err := q.CreateComboMeal(ctx, db.CreateComboMealParams{
-		RestaurantID: restID,
-		Name:         "午間套餐",
-		Description:  pgtype.Text{String: "Lunch combo", Valid: true},
-		Price:        350,
+	// Create option group on menu item
+	og, err := q.CreateOptionGroup(ctx, db.CreateOptionGroupParams{
+		MenuItemID: item.ID,
+		Name:       "辣度",
+		MinChoices: 1,
+		MaxChoices: 1,
+		SortOrder:  0,
 	})
 	require.NoError(t, err)
 
-	// Create combo group
-	group, err := q.CreateComboMealGroup(ctx, db.CreateComboMealGroupParams{
-		ComboMealID: combo.ID,
-		Name:        "選主餐",
-		MinChoices:  1,
-		MaxChoices:  1,
-		SortOrder:   1,
+	// Create option choices
+	_, err = q.CreateOptionChoice(ctx, db.CreateOptionChoiceParams{
+		GroupID:         og.ID,
+		Name:            "小辣",
+		PriceAdjustment: 0,
+		SortOrder:       0,
 	})
 	require.NoError(t, err)
-
-	// Create combo group option referencing menu item
-	_, err = q.CreateComboMealGroupOption(ctx, db.CreateComboMealGroupOptionParams{
-		GroupID:         group.ID,
-		MenuItemID:      pgtype.Int8{Int64: item.ID, Valid: true},
+	_, err = q.CreateOptionChoice(ctx, db.CreateOptionChoiceParams{
+		GroupID:         og.ID,
+		Name:            "中辣",
 		PriceAdjustment: 0,
 		SortOrder:       1,
 	})
 	require.NoError(t, err)
-
-	// Create add-on
-	addon, err := q.CreateAddOn(ctx, db.CreateAddOnParams{
-		RestaurantID: restID,
-		Name:         "加蛋",
-		Price:        15,
-	})
-	require.NoError(t, err)
-	assert.Equal(t, "加蛋", addon.Name)
 
 	// Query full restaurant menu
 	items, err := q.ListMenuItemsByRestaurant(ctx, restID)
 	require.NoError(t, err)
 	assert.Len(t, items, 1)
 
-	addons, err := q.ListAddOnsByRestaurant(ctx, restID)
+	groups, err := q.ListOptionGroupsByMenuItem(ctx, item.ID)
 	require.NoError(t, err)
-	assert.Len(t, addons, 1)
+	assert.Len(t, groups, 1)
+	assert.Equal(t, "辣度", groups[0].Name)
+
+	choices, err := q.ListOptionChoicesByGroup(ctx, og.ID)
+	require.NoError(t, err)
+	assert.Len(t, choices, 2)
 }
 
 func TestUpdateMenuItemPrice(t *testing.T) {
