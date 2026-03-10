@@ -14,6 +14,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 
 	"golang.org/x/image/draw"
@@ -65,6 +66,7 @@ Rules:
 - description is optional, omit or set to "" if none
 - Do NOT include any text outside the JSON object
 - If an item has multiple prices for different quantities (e.g. "Two/NT$688, Six/NT$1,680"), use price_tiers array. Set item price to the lowest tier price.
+- If an item has a 單點 (single) price and a 套餐 (set meal) price, use price_tiers with labels "單點" and "套餐". Set item price to the 單點 price. Do NOT put the 套餐 price in the description.
 - If an item has only one price, omit price_tiers (do NOT create a single-entry price_tiers array).
 - If an item has selectable options (e.g. firmness, spice level, size, toppings, soup base), add option_groups on that item with min_choices/max_choices and options.
 - option_groups is optional — omit if the item has no selectable options.
@@ -94,22 +96,42 @@ func OcrImage(baseURL, model, imagePath string, maxDim int, timeout context.Cont
 	return OllamaChatCtx(timeout, baseURL, model, OCRPrompt, []string{imgB64}, "", nil)
 }
 
+// textChat calls the configured LLM backend with a text-only prompt.
+func textChat(baseURL, model string, useOpenAI bool, prompt string) (string, error) {
+	if useOpenAI {
+		return OpenaiChat(baseURL, model, prompt)
+	}
+	thinkFalse := false
+	return OllamaChat(baseURL, model, prompt, nil, "", &thinkFalse)
+}
+
 // NormalizeMenu sends raw OCR text to an LLM for structured JSON extraction.
 func NormalizeMenu(baseURL, model, rawText string, useOpenAI bool) (*MenuData, error) {
-	prompt := NormalizePrompt + rawText
-
-	var result string
-	var err error
-	if useOpenAI {
-		result, err = OpenaiChat(baseURL, model, prompt)
-	} else {
-		thinkFalse := false
-		result, err = OllamaChat(baseURL, model, prompt, nil, "", &thinkFalse)
-	}
+	result, err := textChat(baseURL, model, useOpenAI, NormalizePrompt+rawText)
 	if err != nil {
 		return nil, err
 	}
 
+	result = cleanLLMResponse(result)
+
+	var menu MenuData
+	if err := json.Unmarshal([]byte(result), &menu); err != nil {
+		return nil, fmt.Errorf("parse menu JSON: %w\nraw response:\n%s", err, result)
+	}
+
+	// Validation pass: fix descriptions that contain price data
+	callLLM := func(prompt string) (string, error) {
+		return textChat(baseURL, model, useOpenAI, prompt)
+	}
+	if err := FixDescriptionPrices(&menu, callLLM); err != nil {
+		log.Printf("  Warning: description price fix failed: %v", err)
+	}
+
+	return &menu, nil
+}
+
+// cleanLLMResponse strips thinking blocks, markdown code fences, and invalid escapes.
+func cleanLLMResponse(result string) string {
 	// Strip thinking blocks (Qwen3.5 may emit <think>...</think> even with thinking disabled)
 	for {
 		start := strings.Index(result, "<think>")
@@ -118,7 +140,6 @@ func NormalizeMenu(baseURL, model, rawText string, useOpenAI bool) (*MenuData, e
 			break
 		}
 		if start == -1 || start > end {
-			// Closing tag without opening — discard everything before it
 			result = result[end+len("</think>"):]
 		} else {
 			result = result[:start] + result[end+len("</think>"):]
@@ -134,14 +155,96 @@ func NormalizeMenu(baseURL, model, rawText string, useOpenAI bool) (*MenuData, e
 		}
 	}
 
-	result = FixInvalidEscapes(result)
+	return FixInvalidEscapes(result)
+}
 
-	var menu MenuData
-	if err := json.Unmarshal([]byte(result), &menu); err != nil {
-		return nil, fmt.Errorf("parse menu JSON: %w\nraw response:\n%s", err, result)
+// priceIndicator detects descriptions that might contain price data.
+var priceIndicator = regexp.MustCompile(`\$\d+|\d+元`)
+
+const validatePrompt = `These menu items have descriptions that may contain price information. For each item, determine if the description contains pricing that should be in price_tiers instead.
+
+Return ONLY a valid JSON array with the corrected items:
+[
+  {
+    "name": "item name",
+    "price": 100,
+    "description": "",
+    "price_tiers": [
+      {"label": "單點", "quantity": 1, "price": 100},
+      {"label": "套餐", "quantity": 1, "price": 258}
+    ]
+  }
+]
+
+Rules:
+- If the description contains a price for a variant (套餐, 大份, 小份, 加量, etc.), move it to price_tiers. Set price to the base/lowest tier. Clear the description.
+- If the description is NOT price data (e.g. "冰/熱皆可", "含飲料", "微辣"), leave it unchanged and omit price_tiers.
+- Return items in the same order as input.
+- Output ONLY the JSON array, nothing else.
+
+Items to review:
+`
+
+// FixDescriptionPrices scans for items whose descriptions look like they
+// contain price data, and sends them to the LLM for re-classification into
+// price_tiers. This is a general-purpose fix that doesn't rely on specific
+// patterns — the LLM decides what counts as price data.
+func FixDescriptionPrices(menu *MenuData, callLLM func(string) (string, error)) error {
+	type itemRef struct{ cat, item int }
+	var refs []itemRef
+	var toFix []MenuItem
+
+	for ci, cat := range menu.Categories {
+		for ii, item := range cat.Items {
+			if item.Description == "" || len(item.PriceTiers) > 0 || item.Price < 0 {
+				continue
+			}
+			if priceIndicator.MatchString(item.Description) {
+				refs = append(refs, itemRef{ci, ii})
+				toFix = append(toFix, MenuItem{
+					Name:        item.Name,
+					Price:       item.Price,
+					Description: item.Description,
+				})
+			}
+		}
 	}
 
-	return &menu, nil
+	if len(toFix) == 0 {
+		return nil
+	}
+
+	itemsJSON, err := json.Marshal(toFix)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("  Validating %d item descriptions with LLM...", len(toFix))
+	result, err := callLLM(validatePrompt + string(itemsJSON))
+	if err != nil {
+		return err
+	}
+
+	result = cleanLLMResponse(result)
+
+	var corrected []MenuItem
+	if err := json.Unmarshal([]byte(result), &corrected); err != nil {
+		return fmt.Errorf("parse validation response: %w", err)
+	}
+
+	if len(corrected) != len(refs) {
+		return fmt.Errorf("validation returned %d items, expected %d", len(corrected), len(refs))
+	}
+
+	// Patch only description, price, and price_tiers back onto originals
+	for i, ref := range refs {
+		item := &menu.Categories[ref.cat].Items[ref.item]
+		item.Description = corrected[i].Description
+		item.Price = corrected[i].Price
+		item.PriceTiers = corrected[i].PriceTiers
+	}
+
+	return nil
 }
 
 // MergeMenus combines per-photo MenuData results into a single menu.
