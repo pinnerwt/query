@@ -20,6 +20,8 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
   const [msg, setMsg] = useState('');
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
   const [editingItem, setEditingItem] = useState<string | null>(null); // "catIdx-itemIdx"
+  const batchOGDefault = { cat: null as number | null, name: '', options: '', min: 1, max: 1 };
+  const [batchOG, setBatchOG] = useState(batchOGDefault);
   const categoriesRef = useRef<HTMLDivElement>(null);
   const sortableRefs = useRef<Map<number, Sortable>>(new Map());
 
@@ -218,6 +220,41 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
     });
   };
 
+  const updateOption = (ci: number, ii: number, ogIdx: number, optIdx: number, update: Partial<{ name: string; price_adjustment: number }>) => {
+    setMenu((prev) => {
+      const cats = [...prev.categories];
+      const items = [...cats[ci].items];
+      const groups = [...(items[ii].option_groups || [])];
+      const options = [...groups[ogIdx].options];
+      options[optIdx] = { ...options[optIdx], ...update };
+      groups[ogIdx] = { ...groups[ogIdx], options };
+      items[ii] = { ...items[ii], option_groups: groups };
+      cats[ci] = { ...cats[ci], items };
+      return { ...prev, categories: cats };
+    });
+  };
+
+  const applyBatchOG = (catIdx: number) => {
+    const opts = batchOG.options.split(',').map(s => s.trim()).filter(Boolean).map(s => {
+      const m = s.match(/^(.+?)\+(\d+)$/);
+      return m
+        ? { name: m[1].trim(), price_adjustment: parseInt(m[2]) }
+        : { name: s, price_adjustment: 0 };
+    });
+    if (!batchOG.name || !opts.length) return;
+    const group = { name: batchOG.name, min_choices: batchOG.min, max_choices: batchOG.max, options: opts };
+    setMenu(prev => {
+      const cats = [...prev.categories];
+      const items = cats[catIdx].items.map(item => ({
+        ...item,
+        option_groups: [...(item.option_groups || []), group],
+      }));
+      cats[catIdx] = { ...cats[catIdx], items };
+      return { ...prev, categories: cats };
+    });
+    setBatchOG(batchOGDefault);
+  };
+
   const inputClass =
     'w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-colors';
 
@@ -309,9 +346,36 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
                 class="font-semibold text-slate-800 bg-transparent border-none focus:outline-none focus:ring-0 flex-1 min-w-0"
               />
               <span class="text-xs text-slate-400 font-medium">{cat.items.length} 項</span>
+              <button onClick={(e) => { e.stopPropagation(); setBatchOG(prev => prev.cat === ci ? batchOGDefault : { ...batchOGDefault, cat: ci }); }} class="text-slate-400 hover:text-amber-600 text-xs transition-colors">批次選項群組</button>
               <button onClick={(e) => { e.stopPropagation(); removeCategory(ci); }} class="text-slate-400 hover:text-red-500 text-sm transition-colors">刪除</button>
               <span class={`text-slate-400 transition-transform ${collapsed.has(ci) ? '-rotate-90' : ''}`}>▾</span>
             </div>
+
+            {/* Batch option group form */}
+            {batchOG.cat === ci && (
+              <div class="px-4 py-3 bg-amber-50/50 border-b border-slate-100 space-y-2">
+                <p class="text-sm font-medium text-slate-700">批次新增選項群組</p>
+                <input
+                  class={inputClass}
+                  placeholder="群組名稱（如：辣度）"
+                  value={batchOG.name}
+                  onInput={(e) => setBatchOG(prev => ({ ...prev, name: (e.target as HTMLInputElement).value }))}
+                />
+                <input
+                  class={inputClass}
+                  placeholder="選項，逗號分隔（如：小辣, 中辣, 大辣+10）"
+                  value={batchOG.options}
+                  onInput={(e) => setBatchOG(prev => ({ ...prev, options: (e.target as HTMLInputElement).value }))}
+                />
+                <div class="flex gap-2 items-center">
+                  <label class="text-xs text-slate-500 flex items-center gap-1">最少 <input type="number" min={0} value={batchOG.min} onInput={(e) => setBatchOG(prev => ({ ...prev, min: parseInt((e.target as HTMLInputElement).value) || 0 }))} class={`${inputClass} w-16`} /></label>
+                  <label class="text-xs text-slate-500 flex items-center gap-1">最多 <input type="number" min={1} value={batchOG.max} onInput={(e) => setBatchOG(prev => ({ ...prev, max: parseInt((e.target as HTMLInputElement).value) || 1 }))} class={`${inputClass} w-16`} /></label>
+                  <div class="flex-1" />
+                  <button onClick={() => setBatchOG(batchOGDefault)} class="text-xs text-slate-400 hover:text-slate-600">取消</button>
+                  <button onClick={() => applyBatchOG(ci)} class="text-xs bg-amber-600 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-amber-700 transition-colors">套用到所有品項</button>
+                </div>
+              </div>
+            )}
 
             {/* Items */}
             {!collapsed.has(ci) && (
@@ -344,9 +408,6 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
                                 <span class="text-sm text-slate-400">元</span>
                               </>
                             )}
-                            <div class="flex-1" />
-                            <button onClick={() => setEditingItem(null)} class="text-xs text-amber-600 font-medium hover:text-amber-700">完成</button>
-                            <button onClick={() => removeItem(ci, ii)} class="text-xs text-red-500 hover:text-red-600">刪除</button>
                           </div>
                           {/* Option Groups */}
                           {item.option_groups?.map((og, ogIdx) => (
@@ -392,24 +453,15 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
                                     <input
                                       class="border-none bg-transparent text-sm w-20 p-0 focus:outline-none"
                                       value={opt.name}
-                                      onInput={(e) => {
-                                        const val = (e.target as HTMLInputElement).value;
-                                        setMenu((prev) => {
-                                          const cats = [...prev.categories];
-                                          const items = [...cats[ci].items];
-                                          const groups = [...(items[ii].option_groups || [])];
-                                          const options = [...groups[ogIdx].options];
-                                          options[optIdx] = { ...options[optIdx], name: val };
-                                          groups[ogIdx] = { ...groups[ogIdx], options };
-                                          items[ii] = { ...items[ii], option_groups: groups };
-                                          cats[ci] = { ...cats[ci], items };
-                                          return { ...prev, categories: cats };
-                                        });
-                                      }}
+                                      onInput={(e) => updateOption(ci, ii, ogIdx, optIdx, { name: (e.target as HTMLInputElement).value })}
                                     />
-                                    {opt.price_adjustment !== 0 && (
-                                      <span class="text-xs text-amber-600">+{opt.price_adjustment}</span>
-                                    )}
+                                    <input
+                                      type="number"
+                                      class="border-none bg-transparent text-xs w-12 p-0 text-amber-600 focus:outline-none text-right"
+                                      value={opt.price_adjustment}
+                                      onInput={(e) => updateOption(ci, ii, ogIdx, optIdx, { price_adjustment: parseInt((e.target as HTMLInputElement).value) || 0 })}
+                                      placeholder="±"
+                                    />
                                     <button
                                       class="text-red-300 hover:text-red-500 text-xs"
                                       onClick={() => {
@@ -463,6 +515,10 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
                               });
                             }}
                           >+ 選項群組</button>
+                          <div class="flex gap-2 justify-end mt-2 pt-2 border-t border-slate-100">
+                            <button onClick={() => removeItem(ci, ii)} class="text-xs text-red-500 hover:text-red-600">刪除品項</button>
+                            <button onClick={() => setEditingItem(null)} class="text-xs text-amber-600 font-medium hover:text-amber-700">完成</button>
+                          </div>
                         </div>
                       ) : (
                         /* Read mode */
