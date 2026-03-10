@@ -1166,7 +1166,7 @@ func (s *server) buildMenuJSON(ctx context.Context, restaurantID int64) (map[str
 	for _, oc := range optionChoices {
 		choiceMap[oc.GroupID] = append(choiceMap[oc.GroupID], map[string]interface{}{
 			"name":       oc.Name,
-			"adjustment": oc.PriceAdjustment,
+			"price_adjustment": oc.PriceAdjustment,
 		})
 	}
 
@@ -1175,8 +1175,8 @@ func (s *server) buildMenuJSON(ctx context.Context, restaurantID int64) (map[str
 	for _, og := range optionGroups {
 		ogMap[og.MenuItemID] = append(ogMap[og.MenuItemID], map[string]interface{}{
 			"name":    og.Name,
-			"min":     og.MinChoices,
-			"max":     og.MaxChoices,
+			"min_choices": og.MinChoices,
+			"max_choices": og.MaxChoices,
 			"options": choiceMap[og.ID],
 		})
 	}
@@ -1365,14 +1365,14 @@ var box=document.createElement('div');
 box.style.cssText='background:#fff;width:100%%;max-width:480px;border-radius:16px 16px 0 0;padding:20px;max-height:70vh;overflow-y:auto;';
 var h='<div style="font-weight:700;font-size:18px;margin-bottom:12px;">'+esc(it.name)+' — '+formatPrice(it.price)+'</div>';
 it.option_groups.forEach(function(og,gi){
-var req=og.min>0?' <span style="color:#e74c3c;font-size:12px;">必選</span>':'';
+var req=og.min_choices>0?' <span style="color:#e74c3c;font-size:12px;">必選</span>':'';
 h+='<div style="font-weight:600;margin:10px 0 6px;">'+esc(og.name)+req+'</div>';
-var isRadio=og.min===1&&og.max===1;
+var isRadio=og.min_choices===1&&og.max_choices===1;
 og.options.forEach(function(opt,oi){
 var type=isRadio?'radio':'checkbox';
 var nm='og'+gi;
-var adj=opt.adjustment?(' (+'+opt.adjustment+')'):'';
-h+='<label style="display:block;padding:8px 0;border-bottom:1px solid #f0f0f0;cursor:pointer;"><input type="'+type+'" name="'+nm+'" data-gi="'+gi+'" data-oi="'+oi+'" data-adj="'+opt.adjustment+'" style="margin-right:8px;">'+esc(opt.name)+adj+'</label>';
+var adj=opt.price_adjustment?(' (+'+opt.price_adjustment+')'):'';
+h+='<label style="display:block;padding:8px 0;border-bottom:1px solid #f0f0f0;cursor:pointer;"><input type="'+type+'" name="'+nm+'" data-gi="'+gi+'" data-oi="'+oi+'" data-adj="'+opt.price_adjustment+'" style="margin-right:8px;">'+esc(opt.name)+adj+'</label>';
 });
 });
 h+='<button id="confirmAdd" style="width:100%%;padding:14px;background:#e74c3c;color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;margin-top:16px;">加入</button>';

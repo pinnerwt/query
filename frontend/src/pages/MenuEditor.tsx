@@ -430,9 +430,15 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
                                     });
                                   }}
                                 />
-                                <span class="text-xs text-slate-400 whitespace-nowrap">
-                                  {og.min_choices === og.max_choices ? `選 ${og.min_choices}` : `${og.min_choices}-${og.max_choices}`}
-                                </span>
+                                <label class="text-xs text-slate-400 flex items-center gap-0.5 whitespace-nowrap">
+                                  <input type="number" min={0} value={og.min_choices} class="w-8 bg-transparent border-none text-xs text-slate-500 p-0 text-center focus:outline-none" onInput={(e) => {
+                                    const val = parseInt((e.target as HTMLInputElement).value) || 0;
+                                    setMenu((prev) => { const cats = [...prev.categories]; const items = [...cats[ci].items]; const groups = [...(items[ii].option_groups || [])]; groups[ogIdx] = { ...groups[ogIdx], min_choices: val }; items[ii] = { ...items[ii], option_groups: groups }; cats[ci] = { ...cats[ci], items }; return { ...prev, categories: cats }; });
+                                  }} />-<input type="number" min={0} value={og.max_choices} class="w-8 bg-transparent border-none text-xs text-slate-500 p-0 text-center focus:outline-none" onInput={(e) => {
+                                    const val = parseInt((e.target as HTMLInputElement).value) || 0;
+                                    setMenu((prev) => { const cats = [...prev.categories]; const items = [...cats[ci].items]; const groups = [...(items[ii].option_groups || [])]; groups[ogIdx] = { ...groups[ogIdx], max_choices: val }; items[ii] = { ...items[ii], option_groups: groups }; cats[ci] = { ...cats[ci], items }; return { ...prev, categories: cats }; });
+                                  }} />
+                                </label>
                                 <button
                                   class="text-red-400 hover:text-red-600 text-sm"
                                   onClick={() => {
