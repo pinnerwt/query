@@ -38,8 +38,9 @@ func main() {
 	photosDir := flag.String("photos-dir", "menu_photos", "Directory for uploaded menu photos")
 	ollamaURL := flag.String("ollama", "http://127.0.0.1:11434", "Ollama API base URL")
 	ocrModel := flag.String("ocr-model", "glm-ocr-gpu", "OCR model name")
-	normModel := flag.String("norm-model", "qwen3.5:9b", "Normalization model name")
-	normURL := flag.String("norm-url", "", "OpenAI-compatible API for normalization")
+	normModel := flag.String("norm-model", "qwen3.5:27b", "Normalization model name")
+	normURL := flag.String("norm-url", "http://127.0.0.1:8090", "OpenAI-compatible API for normalization (llama.cpp)")
+	ocrMaxDim := flag.Int("max-dim", 1600, "Max image dimension for OCR")
 	flag.Parse()
 
 	connStr := *dbURL
@@ -80,6 +81,7 @@ func main() {
 		ocrModel:  *ocrModel,
 		normModel: *normModel,
 		normURL:   *normURL,
+		ocrMaxDim: *ocrMaxDim,
 	}
 
 	mux := http.NewServeMux()
@@ -176,6 +178,7 @@ type server struct {
 	ocrModel  string
 	normModel string
 	normURL   string
+	ocrMaxDim int
 }
 
 // --- Auth handlers ---
@@ -741,7 +744,7 @@ func (s *server) handleOCR(w http.ResponseWriter, r *http.Request) {
 	var texts []string
 	for _, f := range files {
 		ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
-		text, err := ocr.OcrImage(s.ollamaURL, s.ocrModel, f, 800, ctx)
+		text, err := ocr.OcrImage(s.ollamaURL, s.ocrModel, f, s.ocrMaxDim, ctx)
 		cancel()
 		if err != nil {
 			continue

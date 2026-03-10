@@ -110,6 +110,21 @@ func NormalizeMenu(baseURL, model, rawText string, useOpenAI bool) (*MenuData, e
 		return nil, err
 	}
 
+	// Strip thinking blocks (Qwen3.5 may emit <think>...</think> even with thinking disabled)
+	for {
+		start := strings.Index(result, "<think>")
+		end := strings.Index(result, "</think>")
+		if end == -1 {
+			break
+		}
+		if start == -1 || start > end {
+			// Closing tag without opening — discard everything before it
+			result = result[end+len("</think>"):]
+		} else {
+			result = result[:start] + result[end+len("</think>"):]
+		}
+	}
+
 	// Strip markdown code fences if present
 	result = strings.TrimSpace(result)
 	if strings.HasPrefix(result, "```") {
