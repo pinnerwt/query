@@ -93,7 +93,8 @@ go build -o ocr ./cmd/ocr
 ./ocr --db "postgres://..." ChIJ41wbgbqrQjQR75mxQgbywys  # extract & save to DB
 ./ocr --max-photos 5 --db "postgres://..." ChIJ...     # limit photos (default: all)
 ./ocr --model glm-ocr --normalize-model qwen3.5:9b \
-    --normalize-url "" --db "..." ChIJ...               # fallback: all-Ollama pipeline
+    --normalize-url "" --db "..." ChIJ...               # fallback: all-Ollama pipeline (9b, slower)
+./ocr --max-dim 800 --db "..." ChIJ...                 # lower resolution (faster, less accurate)
 ```
 
 ## Architecture
@@ -103,7 +104,7 @@ Go 1.25.0 project — an owner-facing restaurant menu platform backed by Postgre
 **Database-first workflow**: Define schema in `migrations/` (Goose), write queries in `internal/db/queries/*.sql`, then run `sqlc generate` to produce Go code in `internal/db/generated/`. Never edit generated files directly.
 
 **Key layers**:
-- `migrations/` — Goose migration files (PostGIS-enabled). Migration 00006 is the owner-app migration that creates owners, restaurants, orders tables and re-points menu FKs.
+- `migrations/` — Goose migration files (PostGIS-enabled). Migration 00006 is the owner-app migration that creates owners, restaurants, orders tables and re-points menu FKs. Migration 00007 replaces `combo_meals`/`add_ons` with `menu_item_option_groups`/`menu_item_option_choices`.
 - `internal/db/queries/` — Raw SQL files consumed by sqlc (one file per domain: places, owners, owner_restaurants, menu, orders, menu_uploads)
 - `internal/db/generated/` — Auto-generated Go code from sqlc (models, query methods). Do not edit.
 - `internal/db/dbtest/` — Test helper that spins up a PostGIS container via testcontainers-go and runs migrations with Goose
@@ -113,7 +114,7 @@ Go 1.25.0 project — an owner-facing restaurant menu platform backed by Postgre
 - `cmd/fetch/` — CLI for Step 2 detail fetch: replays discovery queries with advanced fields, promotes to `places`/`place_opening_hours`
 - `cmd/scrape/` — CLI for scraping menu photos from Google Maps using headless Chrome (chromedp). Supports `--proxy` for SOCKS5/HTTP proxies. Forces `hl=zh-TW` so Chinese selectors work regardless of proxy region.
 - `cmd/ocr/` — Thin wrapper around `internal/ocr` package. Two-pass pipeline: GLM-OCR (Ollama, GPU) for raw text, then normalization via Qwen3.5 into structured JSON.
-- `internal/auth/` — bcrypt password hashing, JWT (HS256, 24h expiry) via `golang-jwt/jwt/v5`, auth middleware
+- `internal/auth/` — bcrypt password hashing, JWT (HS256, 24h expiry) via `golang-jwt/jwt/v5`, HttpOnly session cookie auth with hourly token rotation, auth middleware
 - `internal/ratelimit/` — Sliding window rate limiter (per-IP, in-memory)
 - `internal/slug/` — URL-safe slug generation from restaurant names (CJK-aware, random hex suffix)
 - `internal/ocr/` — OCR pipeline (types, image processing, normalization, menu DB insertion). Extracted from cmd/ocr for reuse by server.
@@ -122,7 +123,7 @@ Go 1.25.0 project — an owner-facing restaurant menu platform backed by Postgre
 - `frontend/` — Preact + Vite + Tailwind CSS 4 + TypeScript SPA with SortableJS for drag-and-drop. Built to `frontend/dist/`, embedded in Go binary via `frontend_embed.go`.
   - `frontend/src/app.tsx` — Root component: AuthProvider → Login (unauthenticated) or Layout + Router (authenticated)
   - `frontend/src/lib/api.ts` — Fetch wrapper, all API calls, type definitions
-  - `frontend/src/lib/auth.tsx` — AuthContext provider (token in localStorage, JWT validation)
+  - `frontend/src/lib/auth.tsx` — AuthContext provider (HttpOnly session cookie, validates via /api/auth/me)
   - `frontend/src/components/Layout.tsx` — App shell: dark sidebar (`bg-slate-900`, w-60) with context-aware nav, mobile drawer, user profile. Wraps all authenticated routes.
   - `frontend/src/components/Toggle.tsx` — Toggle switch (replaces checkboxes)
   - `frontend/src/components/Modal.tsx` — Modal dialog with backdrop blur
@@ -137,7 +138,7 @@ Go 1.25.0 project — an owner-facing restaurant menu platform backed by Postgre
 **Frontend design system**: Amber primary (`amber-600`), stone-50 body background, slate-900 sidebar, emerald for success/published states. Cards use `rounded-xl shadow-sm border-slate-100`. Inputs use `rounded-lg` with `focus:ring-2 focus:ring-amber-500/20`. All pages use functional setState to prevent stale closures, and async buttons are disabled during requests.
 
 **Server endpoints** (`cmd/server/main.go`):
-- Auth: `POST /api/auth/register` (rate-limited), `POST /api/auth/login`, `GET /api/auth/me`
+- Auth: `POST /api/auth/register` (rate-limited), `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`
 - Restaurant CRUD (auth): `POST/GET/PUT/DELETE /api/restaurants/*`, `PUT .../hours`, `PUT .../publish`
 - Menu (auth): `GET/PUT /api/restaurants/{id}/menu`
 - Photos + OCR (auth): `POST /api/restaurants/{id}/menu-photos`, `POST /api/restaurants/{id}/ocr`
@@ -155,13 +156,13 @@ Go 1.25.0 project — an owner-facing restaurant menu platform backed by Postgre
 **Schema**: Two paths coexist:
 - Legacy: Places (Google Places) → Restaurant details (1:1) → Menu tables
 - Owner app: Owners → Restaurants (with slug, hours, publish state) → Menu tables, Orders → Order items
-- Menu tables (`menu_categories`, `menu_items`, `combo_meals`, `add_ons`) have `restaurant_id` FK pointing to `restaurants(id)`. Migration 00006 preserved IDs so existing data works with both paths.
+- Menu tables (`menu_categories`, `menu_items`, `menu_item_option_groups`, `menu_item_option_choices`) have FKs into the restaurant hierarchy. Migration 00006 preserved IDs so existing data works with both paths. Migration 00007 unified combo meals and add-ons into per-item option groups/choices.
 
 **Data pipeline** has four steps:
 1. `cmd/seed` — Discover places via free Google API calls, store in staging tables. Always use `--lang zh-TW` for Chinese names/addresses.
 2. `cmd/fetch` — Replay discovery queries with advanced field masks (~$0.035/query), promote to `places`/`place_opening_hours`. Always use `--lang zh-TW`.
 3. `cmd/scrape` — Scrape menu photos from Google Maps "菜單" tab via headless Chrome
-4. `cmd/ocr` — Two-pass menu extraction: GLM-OCR (Ollama GPU) reads photo text, then combined text is normalized into structured JSON by Qwen3.5, then inserted into `restaurants`/`menu_categories`/`menu_items`/`menu_item_price_tiers`/`combo_meals`
+4. `cmd/ocr` — Two-pass menu extraction: GLM-OCR (Ollama GPU, 1600px max-dim) reads photo text, then combined text is normalized into structured JSON by Qwen3.5:27b (llama.cpp), then inserted into `restaurants`/`menu_categories`/`menu_items`/`menu_item_price_tiers`/`menu_item_option_groups`/`menu_item_option_choices`
 
 **Model setup** (RTX 3090, 24GB VRAM):
 - Ollama: `ollama pull glm-ocr` then create `glm-ocr-gpu` variant with `num_ctx 8192` for GPU loading. Run `ollama serve`.
