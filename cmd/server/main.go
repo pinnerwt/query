@@ -1330,16 +1330,57 @@ var cats=menuData.categories||[];
 var html=cats.filter(function(c){return c.items&&c.items.length>0;}).map(function(cat){
 return '<div class="category"><div class="category-header">'+esc(cat.name)+'</div>'+
 cat.items.map(function(it){
+var hasOpts=it.option_groups&&it.option_groups.length>0;
 return '<div class="menu-item"><div class="item-info"><div class="item-name">'+esc(it.name)+'</div>'+
 (it.description?'<div class="item-desc">'+esc(it.description)+'</div>':'')+
+(hasOpts?'<div class="item-desc" style="color:#e67e22">有選項</div>':'')+
 '</div><span class="item-price">'+formatPrice(it.price)+'</span>'+
-(it.price>=0?'<button class="add-btn" onclick="addToCart('+it.id+',\''+esc(it.name).replace(/'/g,"\\'")+'\','+it.price+')">+</button>':'')+
+(it.price>=0?'<button class="add-btn" onclick="handleAdd('+it.id+')">+</button>':'')+
 '</div>';}).join('')+'</div>';}).join('');
 document.getElementById('menu').innerHTML=html;
 }
-function addToCart(id,name,price){
-for(var i=0;i<cart.length;i++){if(cart[i].id===id){cart[i].qty++;updateCart();return;}}
-cart.push({id:id,name:name,price:price,qty:1});updateCart();
+var allItems={};
+(menuData.categories||[]).forEach(function(c){c.items.forEach(function(it){allItems[it.id]=it;});});
+function handleAdd(id){
+var it=allItems[id];
+if(!it)return;
+if(!it.option_groups||it.option_groups.length===0){addToCart(id,it.name,it.price,'');return;}
+showOptionModal(it);
+}
+function showOptionModal(it){
+var bg=document.createElement('div');
+bg.style.cssText='position:fixed;top:0;left:0;width:100%%;height:100%%;background:rgba(0,0,0,0.5);z-index:100;display:flex;align-items:flex-end;justify-content:center;';
+var box=document.createElement('div');
+box.style.cssText='background:#fff;width:100%%;max-width:480px;border-radius:16px 16px 0 0;padding:20px;max-height:70vh;overflow-y:auto;';
+var h='<div style="font-weight:700;font-size:18px;margin-bottom:12px;">'+esc(it.name)+' — '+formatPrice(it.price)+'</div>';
+it.option_groups.forEach(function(og,gi){
+var req=og.min>0?' <span style="color:#e74c3c;font-size:12px;">必選</span>':'';
+h+='<div style="font-weight:600;margin:10px 0 6px;">'+esc(og.name)+req+'</div>';
+var isRadio=og.min===1&&og.max===1;
+og.options.forEach(function(opt,oi){
+var type=isRadio?'radio':'checkbox';
+var nm='og'+gi;
+var adj=opt.adjustment?(' (+'+opt.adjustment+')'):'';
+h+='<label style="display:block;padding:8px 0;border-bottom:1px solid #f0f0f0;cursor:pointer;"><input type="'+type+'" name="'+nm+'" data-gi="'+gi+'" data-oi="'+oi+'" data-adj="'+opt.adjustment+'" style="margin-right:8px;">'+esc(opt.name)+adj+'</label>';
+});
+});
+h+='<button id="confirmAdd" style="width:100%%;padding:14px;background:#e74c3c;color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;margin-top:16px;">加入</button>';
+box.innerHTML=h;
+bg.appendChild(box);
+document.body.appendChild(bg);
+bg.onclick=function(e){if(e.target===bg){document.body.removeChild(bg);}};
+document.getElementById('confirmAdd').onclick=function(){
+var adj=0,notes=[];
+it.option_groups.forEach(function(og,gi){
+var checks=box.querySelectorAll('input[data-gi="'+gi+'"]:checked');
+checks.forEach(function(el){var oi=parseInt(el.getAttribute('data-oi'));adj+=parseInt(el.getAttribute('data-adj'));notes.push(og.name+': '+og.options[oi].name);});
+});
+addToCart(it.id,it.name,it.price+adj,notes.join(', '));
+document.body.removeChild(bg);
+};
+}
+function addToCart(id,name,price,notes){
+cart.push({id:id,name:name,price:price,qty:1,notes:notes});updateCart();
 }
 function updateCart(){
 var count=0,total=0;
@@ -1352,7 +1393,7 @@ document.getElementById('cartTotal').textContent='NT$'+total;
 bar.onclick=function(){submitOrder();};
 }
 function submitOrder(){
-var items=cart.map(function(c){return{menu_item_id:c.id,item_name:c.name,quantity:c.qty,unit_price:c.price};});
+var items=cart.map(function(c){return{menu_item_id:c.id,item_name:c.name,quantity:c.qty,unit_price:c.price,notes:c.notes};});
 fetch('/api/public/orders/'+slug,{method:'POST',headers:{'Content-Type':'application/json'},
 body:JSON.stringify({items:items,table_label:''})})
 .then(function(r){return r.json();})
