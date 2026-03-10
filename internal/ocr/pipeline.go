@@ -36,23 +36,16 @@ Output ONLY valid JSON with this exact schema, no other text:
           "price_tiers": [
             {"label": "2入", "quantity": 2, "price": 688},
             {"label": "6入", "quantity": 6, "price": 1680}
-          ]
-        }
-      ]
-    }
-  ],
-  "combos": [
-    {
-      "name": "combo name",
-      "price": 198,
-      "description": "what is included",
-      "groups": [
-        {
-          "name": "group name",
-          "min_choices": 1,
-          "max_choices": 1,
-          "options": [
-            {"name": "option name", "price_adjustment": 0}
+          ],
+          "option_groups": [
+            {
+              "name": "group name",
+              "min_choices": 1,
+              "max_choices": 1,
+              "options": [
+                {"name": "option name", "price_adjustment": 0}
+              ]
+            }
           ]
         }
       ]
@@ -73,9 +66,10 @@ Rules:
 - Do NOT include any text outside the JSON object
 - If an item has multiple prices for different quantities (e.g. "Two/NT$688, Six/NT$1,680"), use price_tiers array. Set item price to the lowest tier price.
 - If an item has only one price, omit price_tiers (do NOT create a single-entry price_tiers array).
-- If the menu has set meals/combos with chooseable options (e.g. "choose a soup", "pick a main"), add them to the combos array with groups and options.
-- combos is optional — omit if no set meals are detected.
-- price_adjustment in combo options is the extra cost on top of the combo base price (0 if no upcharge).
+- If an item has selectable options (e.g. firmness, spice level, size, toppings, soup base), add option_groups on that item with min_choices/max_choices and options.
+- option_groups is optional — omit if the item has no selectable options.
+- price_adjustment in options is the extra cost on top of the item base price (0 if no upcharge).
+- Set meals / combos with chooseable components should be regular items with option_groups, NOT a separate structure.
 
 Raw OCR text:
 `
@@ -168,16 +162,6 @@ func MergeMenus(menus []*MenuData) *MenuData {
 	result := &MenuData{}
 	for _, e := range cats {
 		result.Categories = append(result.Categories, e.cat)
-	}
-
-	comboSeen := make(map[string]bool)
-	for _, m := range menus {
-		for _, combo := range m.Combos {
-			if !comboSeen[combo.Name] {
-				comboSeen[combo.Name] = true
-				result.Combos = append(result.Combos, combo)
-			}
-		}
 	}
 
 	return result
