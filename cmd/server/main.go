@@ -73,15 +73,16 @@ func main() {
 
 	q := db.New(pool)
 	s := &server{
-		q:         q,
-		secret:    secretBytes,
-		baseURL:   *baseURL,
-		photosDir: *photosDir,
-		ollamaURL: *ollamaURL,
-		ocrModel:  *ocrModel,
-		normModel: *normModel,
-		normURL:   *normURL,
-		ocrMaxDim: *ocrMaxDim,
+		q:            q,
+		secret:       secretBytes,
+		baseURL:      *baseURL,
+		photosDir:    *photosDir,
+		secureCookie: auth.IsSecureURL(*baseURL),
+		ollamaURL:    *ollamaURL,
+		ocrModel:     *ocrModel,
+		normModel:    *normModel,
+		normURL:      *normURL,
+		ocrMaxDim:    *ocrMaxDim,
 	}
 
 	mux := http.NewServeMux()
@@ -92,39 +93,40 @@ func main() {
 	// Auth endpoints
 	mux.Handle("POST /api/auth/register", regLimiter.Middleware(http.HandlerFunc(s.handleRegister)))
 	mux.HandleFunc("POST /api/auth/login", s.handleLogin)
-	mux.Handle("GET /api/auth/me", auth.Middleware(secretBytes, http.HandlerFunc(s.handleMe)))
+	mux.Handle("GET /api/auth/me", auth.Middleware(secretBytes, s.secureCookie, http.HandlerFunc(s.handleMe)))
+	mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
 
 	// Restaurant CRUD (auth required)
-	mux.Handle("POST /api/restaurants", auth.Middleware(secretBytes, http.HandlerFunc(s.handleCreateRestaurant)))
-	mux.Handle("GET /api/restaurants/mine", auth.Middleware(secretBytes, http.HandlerFunc(s.handleListMyRestaurants)))
-	mux.Handle("GET /api/restaurants/{id}", auth.Middleware(secretBytes, http.HandlerFunc(s.handleGetRestaurant)))
-	mux.Handle("PUT /api/restaurants/{id}", auth.Middleware(secretBytes, http.HandlerFunc(s.handleUpdateRestaurant)))
-	mux.Handle("DELETE /api/restaurants/{id}", auth.Middleware(secretBytes, http.HandlerFunc(s.handleDeleteRestaurant)))
-	mux.Handle("PUT /api/restaurants/{id}/hours", auth.Middleware(secretBytes, http.HandlerFunc(s.handleSetHours)))
-	mux.Handle("GET /api/restaurants/{id}/hours", auth.Middleware(secretBytes, http.HandlerFunc(s.handleGetHours)))
-	mux.Handle("PUT /api/restaurants/{id}/publish", auth.Middleware(secretBytes, http.HandlerFunc(s.handlePublish)))
-	mux.Handle("PUT /api/restaurants/{id}/location", auth.Middleware(secretBytes, http.HandlerFunc(s.handleSetLocation)))
-	mux.Handle("GET /api/restaurants/{id}/location", auth.Middleware(secretBytes, http.HandlerFunc(s.handleGetLocation)))
+	mux.Handle("POST /api/restaurants", auth.Middleware(secretBytes, s.secureCookie, http.HandlerFunc(s.handleCreateRestaurant)))
+	mux.Handle("GET /api/restaurants/mine", auth.Middleware(secretBytes, s.secureCookie, http.HandlerFunc(s.handleListMyRestaurants)))
+	mux.Handle("GET /api/restaurants/{id}", auth.Middleware(secretBytes, s.secureCookie, http.HandlerFunc(s.handleGetRestaurant)))
+	mux.Handle("PUT /api/restaurants/{id}", auth.Middleware(secretBytes, s.secureCookie, http.HandlerFunc(s.handleUpdateRestaurant)))
+	mux.Handle("DELETE /api/restaurants/{id}", auth.Middleware(secretBytes, s.secureCookie, http.HandlerFunc(s.handleDeleteRestaurant)))
+	mux.Handle("PUT /api/restaurants/{id}/hours", auth.Middleware(secretBytes, s.secureCookie, http.HandlerFunc(s.handleSetHours)))
+	mux.Handle("GET /api/restaurants/{id}/hours", auth.Middleware(secretBytes, s.secureCookie, http.HandlerFunc(s.handleGetHours)))
+	mux.Handle("PUT /api/restaurants/{id}/publish", auth.Middleware(secretBytes, s.secureCookie, http.HandlerFunc(s.handlePublish)))
+	mux.Handle("PUT /api/restaurants/{id}/location", auth.Middleware(secretBytes, s.secureCookie, http.HandlerFunc(s.handleSetLocation)))
+	mux.Handle("GET /api/restaurants/{id}/location", auth.Middleware(secretBytes, s.secureCookie, http.HandlerFunc(s.handleGetLocation)))
 
 	// Menu (auth required)
-	mux.Handle("GET /api/restaurants/{id}/menu", auth.Middleware(secretBytes, http.HandlerFunc(s.handleGetMenu)))
-	mux.Handle("PUT /api/restaurants/{id}/menu", auth.Middleware(secretBytes, http.HandlerFunc(s.handleReplaceMenu)))
+	mux.Handle("GET /api/restaurants/{id}/menu", auth.Middleware(secretBytes, s.secureCookie, http.HandlerFunc(s.handleGetMenu)))
+	mux.Handle("PUT /api/restaurants/{id}/menu", auth.Middleware(secretBytes, s.secureCookie, http.HandlerFunc(s.handleReplaceMenu)))
 
 	// Photo upload + OCR (auth required)
-	mux.Handle("GET /api/restaurants/{id}/menu-photos", auth.Middleware(secretBytes, http.HandlerFunc(s.handleListPhotos)))
-	mux.Handle("POST /api/restaurants/{id}/menu-photos", auth.Middleware(secretBytes, http.HandlerFunc(s.handleUploadPhotos)))
-	mux.Handle("DELETE /api/restaurants/{id}/menu-photos/{photoId}", auth.Middleware(secretBytes, http.HandlerFunc(s.handleDeletePhoto)))
-	mux.Handle("POST /api/restaurants/{id}/ocr", auth.Middleware(secretBytes, http.HandlerFunc(s.handleOCR)))
+	mux.Handle("GET /api/restaurants/{id}/menu-photos", auth.Middleware(secretBytes, s.secureCookie, http.HandlerFunc(s.handleListPhotos)))
+	mux.Handle("POST /api/restaurants/{id}/menu-photos", auth.Middleware(secretBytes, s.secureCookie, http.HandlerFunc(s.handleUploadPhotos)))
+	mux.Handle("DELETE /api/restaurants/{id}/menu-photos/{photoId}", auth.Middleware(secretBytes, s.secureCookie, http.HandlerFunc(s.handleDeletePhoto)))
+	mux.Handle("POST /api/restaurants/{id}/ocr", auth.Middleware(secretBytes, s.secureCookie, http.HandlerFunc(s.handleOCR)))
 
 	// Serve uploaded menu photos
 	mux.Handle("GET /uploads/menu-photos/", http.StripPrefix("/uploads/menu-photos/", http.FileServer(http.Dir(s.photosDir))))
 
 	// QR code (auth required)
-	mux.Handle("GET /api/restaurants/{id}/qr", auth.Middleware(secretBytes, http.HandlerFunc(s.handleQR)))
+	mux.Handle("GET /api/restaurants/{id}/qr", auth.Middleware(secretBytes, s.secureCookie, http.HandlerFunc(s.handleQR)))
 
 	// Orders - owner endpoints (auth required)
-	mux.Handle("GET /api/restaurants/{id}/orders", auth.Middleware(secretBytes, http.HandlerFunc(s.handleListOrders)))
-	mux.Handle("PUT /api/restaurants/{id}/orders/{orderId}/status", auth.Middleware(secretBytes, http.HandlerFunc(s.handleUpdateOrderStatus)))
+	mux.Handle("GET /api/restaurants/{id}/orders", auth.Middleware(secretBytes, s.secureCookie, http.HandlerFunc(s.handleListOrders)))
+	mux.Handle("PUT /api/restaurants/{id}/orders/{orderId}/status", auth.Middleware(secretBytes, s.secureCookie, http.HandlerFunc(s.handleUpdateOrderStatus)))
 
 	// Public endpoints (no auth)
 	mux.HandleFunc("GET /api/public/menu/{slug}", s.handlePublicMenu)
@@ -174,11 +176,12 @@ type server struct {
 	secret    []byte
 	baseURL   string
 	photosDir string
-	ollamaURL string
-	ocrModel  string
-	normModel string
-	normURL   string
-	ocrMaxDim int
+	secureCookie bool
+	ollamaURL    string
+	ocrModel     string
+	normModel    string
+	normURL      string
+	ocrMaxDim    int
 }
 
 // --- Auth handlers ---
@@ -228,8 +231,8 @@ func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	auth.SetSessionCookie(w, token, s.secureCookie)
 	jsonResp(w, 201, map[string]interface{}{
-		"token": token,
 		"owner": map[string]interface{}{
 			"id":    owner.ID,
 			"email": owner.Email,
@@ -265,14 +268,19 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	auth.SetSessionCookie(w, token, s.secureCookie)
 	jsonResp(w, 200, map[string]interface{}{
-		"token": token,
 		"owner": map[string]interface{}{
 			"id":    owner.ID,
 			"email": owner.Email,
 			"name":  owner.Name,
 		},
 	})
+}
+
+func (s *server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	auth.ClearSessionCookie(w, s.secureCookie)
+	jsonResp(w, 200, map[string]interface{}{"ok": true})
 }
 
 func (s *server) handleMe(w http.ResponseWriter, r *http.Request) {

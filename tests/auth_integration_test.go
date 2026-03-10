@@ -84,7 +84,7 @@ func TestAuthIntegration(t *testing.T) {
 		require.NoError(t, err)
 
 		// Build a protected handler
-		protected := auth.Middleware(secret, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		protected := auth.Middleware(secret, false, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ownerID, ok := auth.OwnerIDFromContext(r.Context())
 			if !ok {
 				http.Error(w, "no owner", 500)
@@ -94,9 +94,9 @@ func TestAuthIntegration(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]int64{"owner_id": ownerID})
 		}))
 
-		// With valid token
+		// With valid cookie
 		req := httptest.NewRequest("GET", "/api/auth/me", nil)
-		req.Header.Set("Authorization", "Bearer "+token)
+		req.AddCookie(&http.Cookie{Name: "session", Value: token})
 		w := httptest.NewRecorder()
 		protected.ServeHTTP(w, req)
 		assert.Equal(t, http.StatusOK, w.Code)

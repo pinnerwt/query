@@ -3,27 +3,39 @@ package auth
 import (
 	"context"
 	"net/http"
-	"strings"
+	"time"
 )
 
 type contextKey string
 
 const ownerIDKey contextKey = "owner_id"
 
-// Middleware extracts and validates the Bearer token, setting owner_id in context.
-func Middleware(secret []byte, next http.Handler) http.Handler {
+const rotationInterval = 1 * time.Hour
+
+// Middleware extracts and validates the session cookie, setting owner_id in context.
+// If the token is older than rotationInterval, it issues a fresh token via Set-Cookie.
+func Middleware(secret []byte, secure bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		header := r.Header.Get("Authorization")
-		if header == "" || !strings.HasPrefix(header, "Bearer ") {
-			http.Error(w, `{"error":"missing authorization"}`, http.StatusUnauthorized)
+		cookie, err := r.Cookie(cookieName)
+		if err != nil || cookie.Value == "" {
+			http.Error(w, `{"error":"missing session"}`, http.StatusUnauthorized)
 			return
 		}
 
-		tokenStr := strings.TrimPrefix(header, "Bearer ")
+		tokenStr := cookie.Value
 		ownerID, err := ValidateToken(tokenStr, secret)
 		if err != nil {
-			http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
+			http.Error(w, `{"error":"invalid session"}`, http.StatusUnauthorized)
 			return
+		}
+
+		// Rotate token if older than rotationInterval
+		if iat, err := TokenIssuedAt(tokenStr, secret); err == nil {
+			if time.Since(iat) > rotationInterval {
+				if newToken, err := GenerateToken(ownerID, secret, 24*time.Hour); err == nil {
+					SetSessionCookie(w, newToken, secure)
+				}
+			}
 		}
 
 		ctx := context.WithValue(r.Context(), ownerIDKey, ownerID)

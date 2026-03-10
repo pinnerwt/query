@@ -1,58 +1,49 @@
 import { createContext } from 'preact';
 import { useContext, useState, useEffect, useCallback } from 'preact/hooks';
 import type { Owner } from './api';
-import { getMe } from './api';
+import { getMe, logout as apiLogout } from './api';
 
 interface AuthCtx {
   owner: Owner | null;
-  token: string | null;
   loading: boolean;
-  setToken: (t: string | null) => void;
+  refreshAuth: () => void;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthCtx>({
   owner: null,
-  token: null,
   loading: true,
-  setToken: () => {},
+  refreshAuth: () => {},
   logout: () => {},
 });
 
 export function AuthProvider({ children }: { children: preact.ComponentChildren }) {
-  const [token, setTokenState] = useState<string | null>(() => localStorage.getItem('token'));
   const [owner, setOwner] = useState<Owner | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const setToken = useCallback((t: string | null) => {
-    if (t) localStorage.setItem('token', t);
-    else localStorage.removeItem('token');
-    setTokenState(t);
-  }, []);
-
-  const logout = useCallback(() => {
-    setToken(null);
-    setOwner(null);
-  }, [setToken]);
-
-  useEffect(() => {
-    if (!token) {
-      setLoading(false);
-      setOwner(null);
-      return;
-    }
+  const refreshAuth = useCallback(() => {
     setLoading(true);
     getMe()
       .then(setOwner)
-      .catch(() => {
-        setToken(null);
-        setOwner(null);
-      })
+      .catch(() => setOwner(null))
       .finally(() => setLoading(false));
-  }, [token, setToken]);
+  }, []);
+
+  const logout = useCallback(() => {
+    apiLogout()
+      .catch(() => {})
+      .finally(() => {
+        setOwner(null);
+      });
+  }, []);
+
+  // Check session on mount
+  useEffect(() => {
+    refreshAuth();
+  }, [refreshAuth]);
 
   return (
-    <AuthContext.Provider value={{ owner, token, loading, setToken, logout }}>
+    <AuthContext.Provider value={{ owner, loading, refreshAuth, logout }}>
       {children}
     </AuthContext.Provider>
   );

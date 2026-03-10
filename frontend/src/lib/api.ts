@@ -1,15 +1,13 @@
 const BASE = '/api';
 
 async function request<T>(path: string, opts?: RequestInit): Promise<T> {
-  const token = localStorage.getItem('token');
   const headers: Record<string, string> = {
     ...(opts?.headers as Record<string, string>),
   };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
   if (opts?.body && typeof opts.body === 'string') {
     headers['Content-Type'] = 'application/json';
   }
-  const res = await fetch(`${BASE}${path}`, { ...opts, headers });
+  const res = await fetch(`${BASE}${path}`, { ...opts, headers, credentials: 'include' });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(text || res.statusText);
@@ -108,18 +106,21 @@ export interface OrderItem {
 
 // Auth
 export const register = (email: string, password: string, name: string) =>
-  request<{ token: string; owner: Owner }>('/auth/register', {
+  request<{ owner: Owner }>('/auth/register', {
     method: 'POST',
     body: JSON.stringify({ email, password, name }),
   });
 
 export const login = (email: string, password: string) =>
-  request<{ token: string; owner: Owner }>('/auth/login', {
+  request<{ owner: Owner }>('/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
   });
 
 export const getMe = () => request<Owner>('/auth/me');
+
+export const logout = () =>
+  request<void>('/auth/logout', { method: 'POST' });
 
 // Restaurants
 export const createRestaurant = (data: Partial<Restaurant>) =>
@@ -192,11 +193,10 @@ export const uploadPhotos = (
 ): Promise<unknown> => {
   const form = new FormData();
   for (let i = 0; i < files.length; i++) form.append('photos', files[i]);
-  const token = localStorage.getItem('token');
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${BASE}/restaurants/${id}/menu-photos`);
-    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.withCredentials = true;
     if (onProgress) {
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));

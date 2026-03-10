@@ -4,7 +4,7 @@ import { login, register } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
 export default function Login() {
-  const { setToken } = useAuth();
+  const { refreshAuth } = useAuth();
   const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -17,10 +17,12 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      const res = isRegister
-        ? await register(email, password, name)
-        : await login(email, password);
-      setToken(res.token);
+      if (isRegister) {
+        await register(email, password, name);
+      } else {
+        await login(email, password);
+      }
+      refreshAuth();
       route('/app/');
     } catch (err: any) {
       setError(err.message || 'Failed');
