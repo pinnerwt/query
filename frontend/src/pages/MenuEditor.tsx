@@ -326,8 +326,24 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
                           <input type="text" value={item.name} onInput={(e) => updateItem(ci, ii, { name: (e.target as HTMLInputElement).value })} class={inputClass} placeholder="品名" />
                           <input type="text" value={item.description || ''} onInput={(e) => updateItem(ci, ii, { description: (e.target as HTMLInputElement).value })} class={inputClass} placeholder="描述（選填）" />
                           <div class="flex gap-2 items-center">
-                            <input type="number" value={item.price} onInput={(e) => updateItem(ci, ii, { price: parseInt((e.target as HTMLInputElement).value) || 0 })} class={`${inputClass} w-28`} min={0} />
-                            <span class="text-sm text-slate-400">元</span>
+                            <select
+                              value={item.price < 0 ? String(item.price) : 'custom'}
+                              onChange={(e) => {
+                                const v = (e.target as HTMLSelectElement).value;
+                                updateItem(ci, ii, { price: v === 'custom' ? 0 : parseInt(v) });
+                              }}
+                              class={`${inputClass} w-24`}
+                            >
+                              <option value="custom">自訂</option>
+                              <option value="-1">未知</option>
+                              <option value="-2">時價</option>
+                            </select>
+                            {item.price >= 0 && (
+                              <>
+                                <input type="number" value={item.price} onInput={(e) => updateItem(ci, ii, { price: parseInt((e.target as HTMLInputElement).value) || 0 })} class={`${inputClass} w-28`} min={0} />
+                                <span class="text-sm text-slate-400">元</span>
+                              </>
+                            )}
                             <div class="flex-1" />
                             <button onClick={() => setEditingItem(null)} class="text-xs text-amber-600 font-medium hover:text-amber-700">完成</button>
                             <button onClick={() => removeItem(ci, ii)} class="text-xs text-red-500 hover:text-red-600">刪除</button>
@@ -462,7 +478,7 @@ export default function MenuEditor({ id = '' }: RoutableProps & { id?: string })
                             </p>
                             {item.description && <p class="text-xs text-slate-400 truncate">{item.description}</p>}
                           </div>
-                          <span class="text-sm font-medium text-slate-700 tabular-nums">${item.price}</span>
+                          <span class="text-sm font-medium text-slate-700 tabular-nums">{item.price === -1 ? '未知' : item.price === -2 ? '時價' : `$${item.price}`}</span>
                           <button
                             onClick={(e) => { e.stopPropagation(); removeItem(ci, ii); }}
                             class="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all text-sm"
