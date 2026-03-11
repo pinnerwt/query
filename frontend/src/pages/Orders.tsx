@@ -45,6 +45,19 @@ function OrderCard({ order: o, updatingId, onAdvance, onCancel }: OrderCardProps
       </div>
       {o.table_label && <p class="text-sm font-medium text-slate-800 mb-1">桌號 {o.table_label}</p>}
       <p class="font-bold text-slate-800 text-lg">${o.total_amount} 元</p>
+      {o.items && o.items.length > 0 && (
+        <div class="mt-2 pt-2 border-t border-slate-100 space-y-1">
+          {o.items.map((item) => (
+            <div key={item.id}>
+              <div class="flex justify-between text-sm text-slate-600">
+                <span>{item.item_name} x{item.quantity}</span>
+                <span>${item.unit_price * item.quantity}</span>
+              </div>
+              {item.notes && <p class="text-xs text-slate-400 ml-1">{item.notes}</p>}
+            </div>
+          ))}
+        </div>
+      )}
       {o.status !== 'completed' && o.status !== 'cancelled' && (
         <div class="flex gap-2 mt-3">
           {NEXT_STATUS[o.status] && (

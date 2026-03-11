@@ -97,6 +97,13 @@ go build -o ocr ./cmd/ocr
 ./ocr --max-dim 800 --db "..." ChIJ...                 # lower resolution (faster, less accurate)
 ```
 
+## Development Environment
+
+Tmux session `query` has three windows:
+- `query:1` (backend) — runs `./server --db "postgres://..."`. After `go build ./cmd/server`, restart here (Ctrl-C, re-run).
+- `query:2` (frontend) — for frontend dev (`cd frontend && npm run dev`).
+- `query:3` (llama) — llama.cpp server for OCR normalization, launched via `./llm.sh`.
+
 ## Architecture
 
 Go 1.25.0 project — an owner-facing restaurant menu platform backed by PostgreSQL + PostGIS. Owners register, create restaurants, upload menu photos (OCR extracts structured data), and get a QR code + public ordering page.

@@ -1307,6 +1307,10 @@ body { font-family: -apple-system, "Noto Sans TC", sans-serif; background: #f5f5
 .container { max-width: 480px; margin: 0 auto; min-height: 100vh; background: #fff; padding-bottom: 70px; }
 header { background: #e74c3c; color: #fff; padding: 16px 20px; }
 header h1 { font-size: 20px; }
+.cat-tabs { position: sticky; top: 0; z-index: 40; background: #fff; border-bottom: 1px solid #eee; overflow-x: auto; white-space: nowrap; padding: 8px 12px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.cat-tabs::-webkit-scrollbar { display: none; }
+.cat-tab { display: inline-block; padding: 6px 14px; margin: 0 4px; border-radius: 20px; font-size: 13px; font-weight: 600; border: none; cursor: pointer; background: #f0f0f0; color: #666; transition: all 0.2s; }
+.cat-tab.active { background: #e74c3c; color: #fff; }
 .category { margin-bottom: 8px; }
 .category-header { background: #fafafa; padding: 12px 20px; font-size: 15px; font-weight: 700; color: #e74c3c; border-bottom: 1px solid #eee; }
 .menu-item { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-bottom: 1px solid #f0f0f0; }
@@ -1317,12 +1321,37 @@ header h1 { font-size: 20px; }
 .add-btn { width: 28px; height: 28px; border-radius: 50%%; background: #e74c3c; color: #fff; border: none; font-size: 18px; cursor: pointer; margin-left: 10px; }
 .cart-bar { display: none; position: fixed; bottom: 0; left: 50%%; transform: translateX(-50%%); width: 100%%; max-width: 480px; height: 60px; background: #333; color: #fff; z-index: 50; cursor: pointer; padding: 0 20px; align-items: center; justify-content: space-between; font-size: 16px; font-weight: 600; }
 .cart-bar.visible { display: flex; }
-.submit-btn { width: 100%%; padding: 14px; background: #e74c3c; color: #fff; border: none; border-radius: 10px; font-size: 16px; font-weight: 700; cursor: pointer; margin-top: 12px; }
+.cart-overlay { position: fixed; inset: 0; z-index: 200; background: #fff; display: flex; flex-direction: column; }
+.cart-overlay .cart-header { display: flex; align-items: center; padding: 14px 16px; border-bottom: 1px solid #eee; }
+.cart-overlay .cart-header button { background: none; border: none; font-size: 15px; color: #e74c3c; cursor: pointer; font-weight: 600; padding: 0; margin-right: 12px; }
+.cart-overlay .cart-header h2 { font-size: 18px; font-weight: 700; }
+.cart-items { flex: 1; overflow-y: auto; padding: 12px 16px; }
+.cart-item { padding: 12px 0; border-bottom: 1px solid #f0f0f0; }
+.cart-item-top { display: flex; justify-content: space-between; align-items: center; }
+.cart-item-name { font-size: 15px; font-weight: 600; flex: 1; }
+.cart-item-price { font-size: 15px; font-weight: 700; color: #e74c3c; margin-left: 8px; }
+.cart-item-remove { background: none; border: none; color: #ccc; font-size: 18px; cursor: pointer; padding: 0 0 0 8px; }
+.cart-item-remove:hover { color: #e74c3c; }
+.cart-qty { display: inline-flex; align-items: center; margin-top: 8px; }
+.cart-qty button { width: 28px; height: 28px; border-radius: 50%%; border: 1px solid #ddd; background: #fff; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.cart-qty span { min-width: 32px; text-align: center; font-weight: 600; font-size: 15px; }
+.cart-notes-input { width: 100%%; margin-top: 6px; padding: 6px 10px; border: 1px solid #eee; border-radius: 8px; font-size: 13px; outline: none; }
+.cart-notes-input:focus { border-color: #e74c3c; }
+.cart-footer { border-top: 1px solid #eee; padding: 12px 16px; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+.cart-footer .total-row { display: flex; justify-content: space-between; font-size: 18px; font-weight: 700; margin-bottom: 12px; }
+.cart-footer .submit-btn { width: 100%%; padding: 14px; background: #e74c3c; color: #fff; border: none; border-radius: 10px; font-size: 16px; font-weight: 700; cursor: pointer; }
+.cart-footer .submit-btn:disabled { opacity: 0.5; }
+.success-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; text-align: center; flex: 1; }
+.success-screen .check { width: 64px; height: 64px; border-radius: 50%%; background: #27ae60; color: #fff; font-size: 32px; display: flex; align-items: center; justify-content: center; margin-bottom: 16px; }
+.success-screen h2 { font-size: 22px; margin-bottom: 8px; }
+.success-screen p { color: #999; font-size: 15px; margin-bottom: 24px; }
+.success-screen button { padding: 12px 32px; background: #e74c3c; color: #fff; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; }
 </style>
 </head>
 <body>
 <div class="container">
 <header><h1>%s</h1></header>
+<div id="catTabs" class="cat-tabs"></div>
 <div id="menu"></div>
 </div>
 <div class="cart-bar" id="cartBar">
@@ -1334,12 +1363,23 @@ var restaurant = %s;
 var menuData = %s;
 var slug = "%s";
 var cart = [];
-function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+var activeTab = 0;
+function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML.replace(/"/g,'&quot;');}
 function formatPrice(p){if(p===-1)return'未知';if(p===-2)return'時價';return'NT$'+p;}
+var isScrolling=false;
+function setActiveTab(idx){
+var tabs=document.querySelectorAll('.cat-tab');
+tabs.forEach(function(t,i){t.classList.toggle('active',i===idx);});
+}
 function render(){
 var cats=menuData.categories||[];
-var html=cats.filter(function(c){return c.items&&c.items.length>0;}).map(function(cat){
-return '<div class="category"><div class="category-header">'+esc(cat.name)+'</div>'+
+var visible=cats.filter(function(c){return c.items&&c.items.length>0;});
+var tabsHtml=visible.map(function(cat,i){
+return '<button class="cat-tab'+(i===activeTab?' active':'')+'" onclick="scrollToCat('+i+')">'+esc(cat.name)+'</button>';
+}).join('');
+document.getElementById('catTabs').innerHTML=tabsHtml;
+var html=visible.map(function(cat,i){
+return '<div class="category" id="cat-'+i+'"><div class="category-header">'+esc(cat.name)+'</div>'+
 cat.items.map(function(it){
 var hasOpts=it.option_groups&&it.option_groups.length>0;
 return '<div class="menu-item"><div class="item-info"><div class="item-name">'+esc(it.name)+'</div>'+
@@ -1349,6 +1389,45 @@ return '<div class="menu-item"><div class="item-info"><div class="item-name">'+e
 (it.price>=0?'<button class="add-btn" onclick="handleAdd('+it.id+')">+</button>':'')+
 '</div>';}).join('')+'</div>';}).join('');
 document.getElementById('menu').innerHTML=html;
+setupScrollSpy(visible);
+}
+function scrollToCat(idx){
+activeTab=idx;
+setActiveTab(idx);
+var el=document.getElementById('cat-'+idx);
+if(el){
+isScrolling=true;
+var tabBar=document.getElementById('catTabs');
+var offset=tabBar?tabBar.offsetHeight:0;
+var top=el.getBoundingClientRect().top+window.scrollY-offset;
+window.scrollTo({top:top,behavior:'smooth'});
+setTimeout(function(){isScrolling=false;},600);
+}
+}
+function setupScrollSpy(visible){
+if(!('IntersectionObserver' in window)||visible.length===0)return;
+var tabBar=document.getElementById('catTabs');
+var offset=tabBar?tabBar.offsetHeight+10:50;
+var cachedTabs=document.querySelectorAll('.cat-tab');
+var observer=new IntersectionObserver(function(entries){
+if(isScrolling)return;
+entries.forEach(function(entry){
+if(entry.isIntersecting){
+var id=entry.target.id;
+var idx=parseInt(id.replace('cat-',''));
+if(!isNaN(idx)){
+activeTab=idx;
+cachedTabs.forEach(function(t,i){t.classList.toggle('active',i===idx);});
+var activeBtn=cachedTabs[idx];
+if(activeBtn)activeBtn.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
+}
+}
+});
+},{rootMargin:'-'+offset+'px 0px -60%% 0px',threshold:0});
+visible.forEach(function(_,i){
+var el=document.getElementById('cat-'+i);
+if(el)observer.observe(el);
+});
 }
 var allItems={};
 (menuData.categories||[]).forEach(function(c){c.items.forEach(function(it){allItems[it.id]=it;});});
@@ -1375,7 +1454,8 @@ var adj=opt.price_adjustment?(' (+'+opt.price_adjustment+')'):'';
 h+='<label style="display:block;padding:8px 0;border-bottom:1px solid #f0f0f0;cursor:pointer;"><input type="'+type+'" name="'+nm+'" data-gi="'+gi+'" data-oi="'+oi+'" data-adj="'+opt.price_adjustment+'" style="margin-right:8px;">'+esc(opt.name)+adj+'</label>';
 });
 });
-h+='<button id="confirmAdd" style="width:100%%;padding:14px;background:#e74c3c;color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;margin-top:16px;">加入</button>';
+h+='<textarea id="itemNotes" placeholder="備註（如：不蔥、不蒜）" style="width:100%%;margin-top:12px;padding:10px;border:1px solid #eee;border-radius:8px;font-size:14px;resize:none;outline:none;font-family:inherit;" rows="2"></textarea>';
+h+='<button id="confirmAdd" style="width:100%%;padding:14px;background:#e74c3c;color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;margin-top:12px;">加入</button>';
 box.innerHTML=h;
 bg.appendChild(box);
 document.body.appendChild(bg);
@@ -1386,7 +1466,10 @@ it.option_groups.forEach(function(og,gi){
 var checks=box.querySelectorAll('input[data-gi="'+gi+'"]:checked');
 checks.forEach(function(el){var oi=parseInt(el.getAttribute('data-oi'));adj+=parseInt(el.getAttribute('data-adj'));notes.push(og.name+': '+og.options[oi].name);});
 });
-addToCart(it.id,it.name,it.price+adj,notes.join(', '));
+var userNotes=document.getElementById('itemNotes').value.trim();
+var combined=notes.join(', ');
+if(userNotes){combined=combined?(combined+'; 備註: '+userNotes):userNotes;}
+addToCart(it.id,it.name,it.price+adj,combined);
 document.body.removeChild(bg);
 };
 }
@@ -1394,21 +1477,114 @@ function addToCart(id,name,price,notes){
 cart.push({id:id,name:name,price:price,qty:1,notes:notes});updateCart();
 }
 function updateCart(){
-var count=0,total=0;
-for(var i=0;i<cart.length;i++){count+=cart[i].qty;total+=cart[i].price*cart[i].qty;}
+var count=0;
+for(var i=0;i<cart.length;i++){count+=cart[i].qty;}
 var bar=document.getElementById('cartBar');
 if(count===0){bar.classList.remove('visible');return;}
 bar.classList.add('visible');
 document.getElementById('cartCount').textContent=count+' 項';
-document.getElementById('cartTotal').textContent='NT$'+total;
-bar.onclick=function(){submitOrder();};
+document.getElementById('cartTotal').textContent='NT$'+getCartTotal();
+bar.onclick=function(){showCartPage();};
 }
-function submitOrder(){
+function getCartTotal(){
+var total=0;
+for(var i=0;i<cart.length;i++){total+=cart[i].price*cart[i].qty;}
+return total;
+}
+function showCartPage(){
+if(cart.length===0)return;
+var overlay=document.createElement('div');
+overlay.className='cart-overlay';
+function renderCart(){
+var focusedIdx=null;
+var ae=overlay.querySelector('.cart-notes-input:focus');
+if(ae)focusedIdx=ae.getAttribute('data-idx');
+var itemsHtml=cart.map(function(c,i){
+return '<div class="cart-item">'+
+'<div class="cart-item-top">'+
+'<span class="cart-item-name">'+esc(c.name)+'</span>'+
+'<span class="cart-item-price">NT$'+(c.price*c.qty)+'</span>'+
+'<button class="cart-item-remove" data-idx="'+i+'">&times;</button>'+
+'</div>'+
+'<div class="cart-qty">'+
+'<button data-action="dec" data-idx="'+i+'">&minus;</button>'+
+'<span>'+c.qty+'</span>'+
+'<button data-action="inc" data-idx="'+i+'">+</button>'+
+'</div>'+
+'<input class="cart-notes-input" data-idx="'+i+'" placeholder="備註" value="'+esc(c.notes||'')+'">'+
+'</div>';
+}).join('');
+var total=getCartTotal();
+overlay.innerHTML=
+'<div class="cart-header"><button id="cartBack">&larr; 返回</button><h2>確認訂單</h2></div>'+
+'<div class="cart-items">'+
+(cart.length===0?'<p style="text-align:center;color:#999;padding:40px 0;">購物車是空的</p>':itemsHtml)+
+'</div>'+
+'<div class="cart-footer">'+
+'<div class="total-row"><span>合計</span><span>NT$'+total+'</span></div>'+
+'<button class="submit-btn" id="cartSubmit"'+(cart.length===0?' disabled':'')+'>送出訂單</button>'+
+'</div>';
+overlay.querySelector('#cartBack').onclick=function(){document.body.removeChild(overlay);};
+if(cart.length>0){
+overlay.querySelector('#cartSubmit').onclick=function(){
+var btn=overlay.querySelector('#cartSubmit');
+btn.disabled=true;btn.textContent='送出中...';
+submitOrderFromCart(overlay);
+};
+overlay.querySelectorAll('[data-action]').forEach(function(btn){
+btn.onclick=function(){
+var idx=parseInt(this.getAttribute('data-idx'));
+var action=this.getAttribute('data-action');
+if(action==='inc'){cart[idx].qty++;}
+else{cart[idx].qty--;if(cart[idx].qty<=0){cart.splice(idx,1);}}
+updateCart();renderCart();
+};
+});
+overlay.querySelectorAll('.cart-item-remove').forEach(function(btn){
+btn.onclick=function(){
+var idx=parseInt(this.getAttribute('data-idx'));
+cart.splice(idx,1);updateCart();
+if(cart.length===0){document.body.removeChild(overlay);}
+else{renderCart();}
+};
+});
+overlay.querySelectorAll('.cart-notes-input').forEach(function(input){
+input.oninput=function(){
+var idx=parseInt(this.getAttribute('data-idx'));
+cart[idx].notes=this.value;
+};
+});
+if(focusedIdx!==null){
+var el=overlay.querySelector('.cart-notes-input[data-idx="'+focusedIdx+'"]');
+if(el){el.focus();el.selectionStart=el.selectionEnd=el.value.length;}
+}
+}
+}
+renderCart();
+document.body.appendChild(overlay);
+}
+function submitOrderFromCart(overlay){
 var items=cart.map(function(c){return{menu_item_id:c.id,item_name:c.name,quantity:c.qty,unit_price:c.price,notes:c.notes};});
 fetch('/api/public/orders/'+slug,{method:'POST',headers:{'Content-Type':'application/json'},
 body:JSON.stringify({items:items,table_label:''})})
 .then(function(r){return r.json();})
-.then(function(d){alert('訂單已送出！訂單編號: '+d.id);cart=[];updateCart();});
+.then(function(d){
+cart=[];updateCart();
+overlay.innerHTML=
+'<div class="cart-header"><h2>訂單確認</h2></div>'+
+'<div class="success-screen">'+
+'<div class="check">&#10003;</div>'+
+'<h2>訂單已送出！</h2>'+
+'<p>訂單編號: #'+d.id+'</p>'+
+'<button id="successClose">返回菜單</button>'+
+'</div>';
+overlay.querySelector('#successClose').onclick=function(){document.body.removeChild(overlay);};
+})
+.catch(function(){
+var btn=overlay.querySelector('#cartSubmit');
+if(btn){btn.disabled=false;btn.textContent='送出訂單';}
+alert('送出失敗，請重試');
+});
 }
 render();
 </script>
